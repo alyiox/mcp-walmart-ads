@@ -37,7 +37,7 @@ async def execute_request(
     method: str,
     path: str,
     params: dict[str, Any] | None = None,
-    body: dict[str, Any] | None = None,
+    body: dict[str, Any] | list[Any] | None = None,
 ) -> ApiResponse:
     base_url = cfg.base_urls[ad_type].rstrip("/")
     url = base_url + path

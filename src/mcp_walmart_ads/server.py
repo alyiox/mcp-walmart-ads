@@ -54,7 +54,7 @@ async def walmart_ads_api(
     method: str,
     path: str,
     params: dict[str, Any] | None = None,
-    body: dict[str, Any] | None = None,
+    body: dict[str, Any] | list[Any] | None = None,
 ) -> str:
     """[WalmartAds] Execute authenticated Walmart Connect Ads API request.
 
@@ -65,7 +65,7 @@ async def walmart_ads_api(
         method: HTTP method — GET, POST, PUT, or DELETE.
         path: API path after base URL, e.g. /api/v1/campaigns.
         params: Query string parameters as a JSON object.
-        body: JSON request body for POST/PUT.
+        body: JSON request body for POST/PUT (object or array when the API requires it).
     """
     region_upper = region.upper()
     env_lower = env.lower()
