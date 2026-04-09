@@ -21,7 +21,6 @@ Exposes a single generic tool (`walmart_ads_api`) that acts as an authenticated 
 ## Requirements
 
 - Python 3.13+
-- [`uv`](https://docs.astral.sh/uv/)
 - Walmart Connect Partner Network credentials (consumer ID, RSA key pair, bearer token)
 
 ## Quick start
@@ -64,8 +63,8 @@ cp config.example.json ~/.config/mcp-walmart-ads/config.json
         "private_key_version": "1",
         "bearer_token": "your-bearer-token",
         "base_urls": {
-          "search": "https://developer.api.us.walmart.com/api-proxy/service/WPA/Api/v1",
-          "display": "https://developer.api.us.walmart.com/api-proxy/service/display/api/v1"
+          "search": "https://developer.api.walmart.com/api-proxy/service/WPA/Api/v1",
+          "display": "https://developer.api.walmart.com/api-proxy/service/display/api/v1"
         }
       },
       "sandbox": {
@@ -136,7 +135,7 @@ Add to `.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "walmart-connect-ads": {
+    "walmart-ads": {
       "command": "uvx",
       "args": ["mcp-walmart-ads"]
     }
@@ -151,7 +150,7 @@ Add to your Claude Code MCP config:
 ```json
 {
   "mcpServers": {
-    "walmart-connect-ads": {
+    "walmart-ads": {
       "command": "uvx",
       "args": ["mcp-walmart-ads"]
     }
@@ -162,7 +161,7 @@ Add to your Claude Code MCP config:
 ### Codex
 
 ```toml
-[mcp_servers.walmart-connect-ads]
+[mcp_servers.walmart-ads]
 command = "uvx"
 args = ["mcp-walmart-ads"]
 ```
@@ -173,7 +172,7 @@ args = ["mcp-walmart-ads"]
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "walmart-connect-ads": {
+    "walmart-ads": {
       "type": "local",
       "enabled": true,
       "command": ["uvx", "mcp-walmart-ads"]
@@ -188,7 +187,7 @@ args = ["mcp-walmart-ads"]
 {
   "inputs": [],
   "servers": {
-    "walmart-connect-ads": {
+    "walmart-ads": {
       "type": "stdio",
       "command": "uvx",
       "args": ["mcp-walmart-ads"]

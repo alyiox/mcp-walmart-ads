@@ -9,8 +9,8 @@
         "private_key_version": "1",
         "bearer_token": "your-bearer-token",
         "base_urls": {
-          "search": "https://developer.api.us.walmart.com/api-proxy/service/WPA/Api/v1",
-          "display": "https://developer.api.us.walmart.com/api-proxy/service/display/api/v1"
+          "search": "https://developer.api.walmart.com/api-proxy/service/WPA/Api/v1",
+          "display": "https://developer.api.walmart.com/api-proxy/service/display/api/v1"
         }
       },
       "sandbox": {
