@@ -98,11 +98,13 @@ async def walmart_ads_api(
       POST   /api/v1/keywords           create keywords (array body)
       PUT    /api/v1/keywords           update keywords (array body)
       PUT    /api/v1/keywords/delete    delete keywords (array body)
-      POST   /api/v2/snapshot/report    request performance report snapshot
-      GET    /api/v2/snapshot           retrieve performance report snapshot
-      POST   /api/v1/snapshot/entity    request entity snapshot
-      GET    /api/v1/snapshot           retrieve entity snapshot
-      POST   /api/v1/snapshot/insight   request insight snapshot
+      POST   /api/v2/snapshot/report              request performance report snapshot
+      GET    /api/v2/snapshot                    retrieve performance report snapshot
+      POST   /api/v1/snapshot/entity             request entity snapshot
+      GET    /api/v1/snapshot                    retrieve entity snapshot
+      POST   /api/v1/snapshot/insight            request insight snapshot
+      POST   /api/v1/snapshot/recommendations    request item/keyword recommendations
+      POST   /api/v2/snapshot/recommendations    request campaign recommendations
 
     display — Display Advertising
       GET    /api/v1/campaignGroups     list campaign groups

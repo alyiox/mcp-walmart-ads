@@ -1,17 +1,14 @@
 # Snapshot Reports API (Display)
 
+## Performance report snapshot
+
 Reference:
 - https://developer.walmart.com/advertising-partners/docs/create-report-snapshot
 - https://developer.walmart.com/advertising-partners/docs/retrieve-snapshots-1
-- https://developer.walmart.com/advertising-partners/docs/create-entity-snapshot-1
 - https://developer.walmart.com/advertising-partners/docs/sample-requests-and-responses-for-create-report-snapshot
 - https://developer.walmart.com/advertising-partners/docs/sample-response-report-snapshot
-- https://developer.walmart.com/advertising-partners/docs/sample-requests-and-responses-for-create-entity-snapshot
-- https://developer.walmart.com/advertising-partners/docs/sample-response-entity-snapshot
 - https://developer.walmart.com/advertising-partners/docs/definition-of-various-parameters-generated-across-the-snapshot-reports
 - https://developer.walmart.com/advertising-partners/docs/metric-type-availability-by-report-type
-
-## Performance report snapshot
 
 ### Request snapshot
 
@@ -67,6 +64,11 @@ Response:
 Output is gzip-compressed. Contents are CSV (report snapshots) or JSON (entity snapshots). Files expire after one day.
 
 ## Entity snapshot
+
+Reference:
+- https://developer.walmart.com/advertising-partners/docs/create-entity-snapshot-1
+- https://developer.walmart.com/advertising-partners/docs/sample-requests-and-responses-for-create-entity-snapshot
+- https://developer.walmart.com/advertising-partners/docs/sample-response-entity-snapshot
 
 ### Request entity snapshot
 
