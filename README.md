@@ -13,7 +13,7 @@ Exposes a single generic tool (`walmart_ads_api`) that acts as an authenticated 
 
 - **One tool, any endpoint** — no code changes needed when APIs evolve
 - Supports both Sponsored Search and Display API families
-- Multi-region, multi-environment (production + sandbox) via config file
+- Multi-region, multi-environment (production + staging) via config file
 - Per-request RSA-SHA256 signing with automatic header construction
 - Large responses truncated with full data available via MCP resource URI
 - Bundled API reference docs served as MCP resources so the agent knows endpoint schemas
@@ -67,11 +67,11 @@ cp config.example.json ~/.config/mcp-walmart-ads/config.json
           "display": "https://developer.api.walmart.com/api-proxy/service/display/api/v1"
         }
       },
-      "sandbox": {
-        "consumer_id": "your-sandbox-consumer-id",
-        "private_key": "./keys/us-sandbox.pem",
+      "staging": {
+        "consumer_id": "your-staging-consumer-id",
+        "private_key": "./keys/us-staging.pem",
         "private_key_version": "1",
-        "bearer_token": "your-sandbox-bearer-token",
+        "bearer_token": "your-staging-bearer-token",
         "base_urls": {
           "search": "https://developer.api.stg.walmart.com/api-proxy/service/WPA/Api/v1",
           "display": "https://developer.api.us.stg.walmart.com/api-proxy/service/display/api/v1"
@@ -104,7 +104,7 @@ Parameters shown in the client UI for user approval before execution:
 | Parameter | Required | Description |
 |---|---|---|
 | `region` | yes | e.g. `US` |
-| `env` | yes | `production` or `sandbox` |
+| `env` | yes | `production` or `staging` |
 | `ad_type` | yes | `search` or `display` |
 | `method` | yes | `GET`, `POST`, `PUT`, `DELETE` |
 | `path` | yes | e.g. `/api/v1/campaigns` |

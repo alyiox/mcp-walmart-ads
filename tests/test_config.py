@@ -36,7 +36,7 @@ def test_load_valid_config(tmp_path: Path) -> None:
         "truncate_threshold": 10000,
         "regions": {
             "US": {
-                "sandbox": {
+                "staging": {
                     "consumer_id": "test-id",
                     "private_key": str(key_file),
                     "private_key_version": "2",
@@ -53,8 +53,8 @@ def test_load_valid_config(tmp_path: Path) -> None:
     cfg = load_config(cfg_file)
 
     assert "US" in cfg.regions
-    assert "sandbox" in cfg.regions["US"]
-    env = cfg.regions["US"]["sandbox"]
+    assert "staging" in cfg.regions["US"]
+    env = cfg.regions["US"]["staging"]
     assert env.consumer_id == "test-id"
     assert env.private_key_version == "2"
     assert env.base_urls["search"] == "https://search.example.com"
@@ -68,7 +68,7 @@ def test_relative_key_path(tmp_path: Path) -> None:
     cfg_data = {
         "regions": {
             "US": {
-                "sandbox": {
+                "staging": {
                     "consumer_id": "id",
                     "private_key": str(rel),
                     "bearer_token": "tok",
@@ -82,7 +82,7 @@ def test_relative_key_path(tmp_path: Path) -> None:
     }
     cfg_file = _write_config(tmp_path, cfg_data)
     cfg = load_config(cfg_file)
-    assert cfg.regions["US"]["sandbox"].private_key_pem.startswith("-----BEGIN")
+    assert cfg.regions["US"]["staging"].private_key_pem.startswith("-----BEGIN")
 
 
 def test_missing_config_file_raises() -> None:
@@ -94,7 +94,7 @@ def test_missing_required_field_raises(tmp_path: Path) -> None:
     cfg_data = {
         "regions": {
             "US": {
-                "sandbox": {
+                "staging": {
                     "consumer_id": "id",
                     # private_key missing
                     "bearer_token": "tok",

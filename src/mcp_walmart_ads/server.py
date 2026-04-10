@@ -53,6 +53,17 @@ def _register_doc_resources() -> None:
 _register_doc_resources()
 
 
+@mcp.resource("wmc://config")
+def get_config() -> str:
+    """[WalmartAds] Available regions, environments, and ad types. Src: config."""
+    result: dict[str, Any] = {}
+    for region, envs in config.regions.items():
+        result[region] = {}
+        for env_name, env_cfg in envs.items():
+            result[region][env_name] = list(env_cfg.base_urls.keys())
+    return json.dumps({"regions": result}, indent=2)
+
+
 @mcp.resource("wmc://responses/{request_id}")
 def cached_response_resource(request_id: str) -> str:
     """[WalmartAds] Retrieve full cached API response. Src: responses."""
@@ -78,9 +89,9 @@ async def walmart_ads_api(
     r"""[WalmartAds] Execute authenticated Walmart Connect Ads API request.
 
     Args:
-        region: API region, e.g. US. Src: regions.
-        env: Target environment — production or sandbox. Src: environments.
-        ad_type: API family — search or display. Src: ad_types.
+        region: API region, e.g. US. Src: config.
+        env: Target environment — production or staging. Src: config.
+        ad_type: API family — search or display. Src: config.
         method: HTTP method — GET, POST, PUT, or DELETE.
         path: API path after base URL, e.g. /api/v1/campaigns.
         params: Query string parameters as a JSON object.
@@ -202,8 +213,8 @@ async def walmart_ads_download_display_snapshot(
     polling a display snapshot to ``done`` status.
 
     Args:
-        region: API region, e.g. US. Src: regions.
-        env: Target environment — production or sandbox. Src: environments.
+        region: API region, e.g. US. Src: config.
+        env: Target environment — production or staging. Src: config.
         snapshot_id: The snapshot ID from the ``details`` URL (e.g. ``1a``).
         advertiser_id: The advertiser ID used when creating the snapshot.
     """
