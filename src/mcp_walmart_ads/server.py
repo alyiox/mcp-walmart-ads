@@ -23,7 +23,8 @@ mcp = FastMCP(
         "wmc://docs/search/campaigns, wmc://docs/search/ad-groups, "
         "wmc://docs/search/keywords, wmc://docs/search/snapshot-reports, "
         "wmc://docs/display/campaigns, wmc://docs/display/targeting, "
-        "wmc://docs/display/itemsets, wmc://docs/display/snapshot-reports."
+        "wmc://docs/display/audiences, wmc://docs/display/itemsets, "
+        "wmc://docs/display/snapshot-reports."
     ),
 )
 
@@ -117,6 +118,13 @@ async def walmart_ads_api(
       PUT    /api/v1/lineItems          update line item
       POST   /api/v2/targeting/list      list contextual/behavioral targets
       POST   /api/v1/geoLocations/list  list geo location targets
+      POST   /api/v1/audiences          create custom audience
+      PATCH  /api/v1/audiences          update custom audience
+      POST   /api/v1/audiences/list     list custom audiences
+      POST   /api/v1/audiences/brand    create brand audience
+      GET    /api/v1/audiences/brand/status  get brand audience status
+      POST   /api/v1/audiences/estimate      audience size estimate
+      POST   /api/v1/audiences/intelligence  audience intelligence
       POST   /api/v1/itemset            create itemset
       POST   /api/v1/itemsets/list      list itemsets
       PUT    /api/v1/itemset            update itemset
