@@ -21,7 +21,8 @@ mcp = FastMCP(
         "For request/response field details, read the doc resources: "
         "wmc://docs/search/campaigns, wmc://docs/search/ad-groups, "
         "wmc://docs/search/keywords, wmc://docs/search/snapshot-reports, "
-        "wmc://docs/display/campaigns, wmc://docs/display/snapshot-reports."
+        "wmc://docs/display/campaigns, wmc://docs/display/targeting, "
+        "wmc://docs/display/itemsets, wmc://docs/display/snapshot-reports."
     ),
 )
 
@@ -113,6 +114,13 @@ async def walmart_ads_api(
       GET    /api/v1/lineItems          list line items
       POST   /api/v1/lineItems          create line item
       PUT    /api/v1/lineItems          update line item
+      POST   /api/v2/targeting/list      list contextual/behavioral targets
+      POST   /api/v1/geoLocations/list  list geo location targets
+      POST   /api/v1/itemset            create itemset
+      POST   /api/v1/itemsets/list      list itemsets
+      PUT    /api/v1/itemset            update itemset
+      POST   /api/v1/itemset/info       get itemset info
+      POST   /api/v1/itemset/expression get itemset expression
       POST   /api/v1/snapshot/report    request snapshot report
       GET    /api/v1/snapshot           retrieve snapshot (report or entity)
       POST   /api/v1/snapshot/entity    request entity snapshot
