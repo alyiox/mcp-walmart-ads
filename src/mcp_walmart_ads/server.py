@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import gzip
 import json
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from .client import execute_request
+from .client import download_file, execute_request
 from .config import load_config
 from .resources import ResponseCache, list_doc_resources, read_cached_response, read_doc_resource
 
@@ -124,6 +125,9 @@ async def walmart_ads_api(
       POST   /api/v1/snapshot/report    request snapshot report
       GET    /api/v1/snapshot           retrieve snapshot (report or entity)
       POST   /api/v1/snapshot/entity    request entity snapshot
+
+    Display snapshot files require authenticated download — use
+    walmart_ads_download_display_snapshot with the URL from the `details` field.
     """
     region_upper = region.upper()
     env_lower = env.lower()
@@ -171,6 +175,62 @@ async def walmart_ads_api(
         )
 
     return f"HTTP {response.status_code}\n\n{body_str}"
+
+
+_DISPLAY_SNAPSHOT_URL = "https://advertising.walmart.com/display/file/{snapshot_id}"
+
+
+@mcp.tool()
+async def walmart_ads_download_display_snapshot(
+    region: str,
+    env: str,
+    snapshot_id: str,
+    advertiser_id: int,
+) -> str:
+    r"""[WalmartAds] Download a display snapshot file (report or entity).
+
+    Display snapshot download URLs require authenticated requests with Walmart
+    API headers. Use this tool with the URL from the ``details`` field after
+    polling a display snapshot to ``done`` status.
+
+    Args:
+        region: API region, e.g. US. Src: regions.
+        env: Target environment — production or sandbox. Src: environments.
+        snapshot_id: The snapshot ID from the ``details`` URL (e.g. ``1a``).
+        advertiser_id: The advertiser ID used when creating the snapshot.
+    """
+    region_upper = region.upper()
+    env_lower = env.lower()
+
+    if region_upper not in config.regions:
+        available = ", ".join(config.regions.keys())
+        return f"Error: region '{region}' not found in config. Available: {available}"
+
+    if env_lower not in config.regions[region_upper]:
+        available = ", ".join(config.regions[region_upper].keys())
+        return f"Error: env '{env}' not found for region '{region}'. Available: {available}"
+
+    env_cfg = config.regions[region_upper][env_lower]
+    url = _DISPLAY_SNAPSHOT_URL.format(snapshot_id=snapshot_id)
+
+    response = await download_file(
+        cfg=env_cfg, url=url, params={"advertiserId": advertiser_id}
+    )
+
+    if response.status_code != 200:
+        return f"HTTP {response.status_code}\n\nDownload failed."
+
+    try:
+        text = gzip.decompress(response.content).decode()
+    except gzip.BadGzipFile:
+        text = response.content.decode()
+
+    cache.put(response.request_id, text)
+    return (
+        f"HTTP {response.status_code}\n"
+        f"Downloaded {len(text.encode()):,} bytes.\n"
+        f"Content available at: wmc://responses/{response.request_id}"
+    )
 
 
 # ── entry point ────────────────────────────────────────────────────────────────

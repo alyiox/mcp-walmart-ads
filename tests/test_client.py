@@ -6,7 +6,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from mcp_walmart_ads.client import _build_headers
+from mcp_walmart_ads.client import _build_headers, download_file
 from mcp_walmart_ads.config import EnvConfig
 
 
@@ -83,3 +83,33 @@ async def test_execute_request_builds_correct_url() -> None:
     call_kwargs = mock_client.request.call_args
     assert call_kwargs.kwargs["url"] == "https://search.example.com/api/v1/api/v1/campaigns"
     assert call_kwargs.kwargs["method"] == "GET"
+
+
+@pytest.mark.asyncio
+async def test_download_file_uses_full_url_with_auth_headers() -> None:
+    cfg = _make_env_cfg()
+    mock_response = MagicMock()
+    mock_response.content = b"\x1f\x8b fake gzip"
+    mock_response.status_code = 200
+
+    with patch("mcp_walmart_ads.client.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        result = await download_file(
+            cfg=cfg,
+            url="https://advertising.walmart.com/display/file/abc-123",
+            params={"advertiserId": 600001},
+        )
+
+    assert result.status_code == 200
+    assert result.content == b"\x1f\x8b fake gzip"
+    call_kwargs = mock_client.get.call_args
+    assert call_kwargs.args[0] == "https://advertising.walmart.com/display/file/abc-123"
+    assert call_kwargs.kwargs["params"] == {"advertiserId": 600001}
+    headers = call_kwargs.kwargs["headers"]
+    assert "WM_SEC.AUTH_SIGNATURE" in headers
+    assert "Authorization" in headers
+    assert "Content-Type" not in headers

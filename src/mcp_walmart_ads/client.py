@@ -17,6 +17,13 @@ class ApiResponse:
     request_id: str
 
 
+@dataclass(frozen=True)
+class DownloadResponse:
+    status_code: int
+    content: bytes
+    request_id: str
+
+
 def _build_headers(cfg: EnvConfig) -> dict[str, str]:
     sig = generate_signature(cfg.consumer_id, cfg.private_key_pem, cfg.private_key_version)
     return {
@@ -62,5 +69,26 @@ async def execute_request(
     return ApiResponse(
         status_code=response.status_code,
         body=body_data,
+        request_id=request_id,
+    )
+
+
+async def download_file(
+    cfg: EnvConfig,
+    url: str,
+    params: dict[str, Any] | None = None,
+) -> DownloadResponse:
+    """Download a file from an authenticated Walmart endpoint (e.g. display snapshot)."""
+    headers = _build_headers(cfg)
+    headers.pop("Content-Type", None)
+    headers["Accept"] = "*/*"
+    request_id = str(uuid.uuid4())
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers, params=params, timeout=120.0)
+
+    return DownloadResponse(
+        status_code=response.status_code,
+        content=response.content,
         request_id=request_id,
     )

@@ -94,6 +94,28 @@ Response:
 
 Retrieve entity snapshots using the same `GET /api/v1/snapshot` endpoint above.
 
+## Download snapshot file
+
+Reference:
+- https://developer.walmart.com/advertising-partners/docs/sample-response-report-snapshot#to-enhance-the-security-of-your-data-kindly-utilize-the-get-call-to-download-the-snapshot-identified-by-id-10
+- https://developer.walmart.com/advertising-partners/docs/sample-response-entity-snapshot#to-enhance-the-security-of-your-data-kindly-utilize-the-get-call-to-download-the-snapshot-identified-by-id-1a
+
+Display snapshot download URLs (in the `details` field) require authenticated requests with the same Walmart API headers. Use the **`walmart_ads_download_display_snapshot`** tool to download and decompress the file.
+
+Args:
+- `region` (string, required) — API region, e.g. `US`
+- `env` (string, required) — target environment: `production` or `sandbox`
+- `snapshot_id` (string, required) — the snapshot ID extracted from the `details` URL (e.g. `1a`)
+- `advertiser_id` (integer, required) — the advertiser ID used when creating the snapshot
+
+The tool builds the download URL from the snapshot ID, downloads the gzip-compressed file, decompresses it, caches the content, and returns a resource link (`wmc://responses/{request_id}`). Contents are CSV for report snapshots and JSON for entity snapshots.
+
+Workflow:
+1. Request a snapshot (`POST /api/v1/snapshot/report` or `POST /api/v1/snapshot/entity`)
+2. Poll with `GET /api/v1/snapshot` until `jobStatus` is `done`
+3. Extract the snapshot ID from the `details` URL and pass it with `advertiserId` to `walmart_ads_download_display_snapshot`
+4. Read the returned `wmc://responses/{request_id}` resource for the full content
+
 ## Notes
 
 - Reporting data may be delayed 24–48 hours from the time of the request.
@@ -102,4 +124,4 @@ Retrieve entity snapshots using the same `GET /api/v1/snapshot` endpoint above.
 - If report data is unavailable for the requested end date, the API fails and returns the latest available date.
 - No limit on number of snapshot requests per advertiser (rate limits still apply).
 - Separate advertiser IDs exist for Onsite and Offsite display.
-- Large responses are truncated in the tool result; full data available via `wmc://responses/{request_id}`.
+- Snapshot files expire after one day.
