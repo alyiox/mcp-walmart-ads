@@ -99,9 +99,9 @@ async def walmart_ads_api(
       PUT    /api/v1/keywords           update keywords (array body)
       PUT    /api/v1/keywords/delete    delete keywords (array body)
       POST   /api/v2/snapshot/report    request performance report snapshot
-      GET    /api/v2/snapshot/report    retrieve performance report snapshot
+      GET    /api/v2/snapshot           retrieve performance report snapshot
       POST   /api/v1/snapshot/entity    request entity snapshot
-      GET    /api/v1/snapshot/entity    retrieve entity snapshot
+      GET    /api/v1/snapshot           retrieve entity snapshot
       POST   /api/v1/snapshot/insight   request insight snapshot
 
     display — Display Advertising
@@ -112,7 +112,8 @@ async def walmart_ads_api(
       POST   /api/v1/lineItems          create line item
       PUT    /api/v1/lineItems          update line item
       POST   /api/v1/snapshot/report    request snapshot report
-      GET    /api/v1/snapshot/report    retrieve snapshot report
+      GET    /api/v1/snapshot           retrieve snapshot (report or entity)
+      POST   /api/v1/snapshot/entity    request entity snapshot
     """
     region_upper = region.upper()
     env_lower = env.lower()
