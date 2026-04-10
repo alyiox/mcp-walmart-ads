@@ -232,9 +232,7 @@ async def walmart_ads_download_display_snapshot(
     env_cfg = config.regions[region_upper][env_lower]
     url = _DISPLAY_SNAPSHOT_URL.format(snapshot_id=snapshot_id)
 
-    response = await download_file(
-        cfg=env_cfg, url=url, params={"advertiserId": advertiser_id}
-    )
+    response = await download_file(cfg=env_cfg, url=url, params={"advertiserId": advertiser_id})
 
     if response.status_code != 200:
         return f"HTTP {response.status_code}\n\nDownload failed."
