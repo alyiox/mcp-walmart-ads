@@ -17,21 +17,37 @@ mcp = FastMCP(
     instructions=(
         "MCP server for Walmart Connect Ads APIs. "
         "Use the walmart_ads_api tool to execute API calls. "
-        "Read wmc://docs/* resources to learn endpoint schemas before calling the tool."
+        "The tool description includes an endpoint index with methods and paths. "
+        "For request/response field details, read the doc resources: "
+        "wmc://docs/search/campaigns, wmc://docs/search/ad-groups, "
+        "wmc://docs/search/keywords, wmc://docs/search/snapshot-reports, "
+        "wmc://docs/display/campaigns, wmc://docs/display/snapshot-reports."
     ),
 )
 
 # ── resources ──────────────────────────────────────────────────────────────────
 
 
-@mcp.resource("wmc://docs/{ad_type}/{endpoint_group}")
-def doc_resource(ad_type: str, endpoint_group: str) -> str:
-    """[WalmartAds] API reference doc. Src: docs."""
-    uri = f"wmc://docs/{ad_type}/{endpoint_group}"
-    content = read_doc_resource(uri)
-    if content is None:
-        return f"No documentation found for {uri}"
-    return content
+def _register_doc_resources() -> None:
+    """Register each bundled doc as a static resource (not a template)."""
+
+    def _make_handler(uri: str):  # noqa: ANN202 – closure factory
+        def handler() -> str:
+            content = read_doc_resource(uri)
+            return content or f"No documentation found for {uri}"
+
+        return handler
+
+    for doc in list_doc_resources():
+        mcp.resource(
+            doc["uri"],
+            name=doc["name"],
+            description=doc["description"],
+            mime_type=doc["mime_type"],
+        )(_make_handler(doc["uri"]))
+
+
+_register_doc_resources()
 
 
 @mcp.resource("wmc://responses/{request_id}")
@@ -56,7 +72,7 @@ async def walmart_ads_api(
     params: dict[str, Any] | None = None,
     body: dict[str, Any] | list[Any] | None = None,
 ) -> str:
-    """[WalmartAds] Execute authenticated Walmart Connect Ads API request.
+    r"""[WalmartAds] Execute authenticated Walmart Connect Ads API request.
 
     Args:
         region: API region, e.g. US. Src: regions.
@@ -66,6 +82,37 @@ async def walmart_ads_api(
         path: API path after base URL, e.g. /api/v1/campaigns.
         params: Query string parameters as a JSON object.
         body: JSON request body for POST/PUT (object or array when the API requires it).
+
+    Endpoint index (read wmc://docs/{ad_type}/{group} for field details):
+
+    search — Sponsored Search (Sponsored Products, SBA, Video)
+      GET    /api/v1/campaigns          list campaigns
+      POST   /api/v1/campaigns          create campaigns (array body)
+      PUT    /api/v1/campaigns          update campaigns (array body)
+      PUT    /api/v1/campaigns/delete   delete campaigns (array body)
+      GET    /api/v1/adGroups           list ad groups
+      POST   /api/v1/adGroups           create ad groups (array body)
+      PUT    /api/v1/adGroups           update ad groups (array body)
+      PUT    /api/v1/adGroups/delete    delete ad groups (array body)
+      GET    /api/v1/keywords           list keywords
+      POST   /api/v1/keywords           create keywords (array body)
+      PUT    /api/v1/keywords           update keywords (array body)
+      PUT    /api/v1/keywords/delete    delete keywords (array body)
+      POST   /api/v2/snapshot/report    request performance report snapshot
+      GET    /api/v2/snapshot/report    retrieve performance report snapshot
+      POST   /api/v1/snapshot/entity    request entity snapshot
+      GET    /api/v1/snapshot/entity    retrieve entity snapshot
+      POST   /api/v1/snapshot/insight   request insight snapshot
+
+    display — Display Advertising
+      GET    /api/v1/campaignGroups     list campaign groups
+      POST   /api/v1/campaignGroups     create campaign group
+      PUT    /api/v1/campaignGroups     update campaign group
+      GET    /api/v1/lineItems          list line items
+      POST   /api/v1/lineItems          create line item
+      PUT    /api/v1/lineItems          update line item
+      POST   /api/v1/snapshot/report    request snapshot report
+      GET    /api/v1/snapshot/report    retrieve snapshot report
     """
     region_upper = region.upper()
     env_lower = env.lower()
@@ -119,9 +166,6 @@ async def walmart_ads_api(
 
 
 def main() -> None:
-    # Register all bundled doc resources so list_resources works
-    for doc in list_doc_resources():
-        pass  # FastMCP discovers them via the @mcp.resource decorator pattern above
     mcp.run(transport="stdio")
 
 
