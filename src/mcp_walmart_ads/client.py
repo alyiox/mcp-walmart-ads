@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -15,6 +16,7 @@ class ApiResponse:
     status_code: int
     body: Any
     request_id: str
+    curl: str
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,20 @@ def _build_headers(cfg: EnvConfig) -> dict[str, str]:
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
+
+
+def build_curl(
+    method: str,
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any] | list[Any] | None = None,
+) -> str:
+    parts = [f"curl -X {method.upper()} '{url}'"]
+    for k, v in headers.items():
+        parts.append(f"  -H '{k}: {v}'")
+    if body is not None:
+        parts.append(f"  -d '{json.dumps(body)}'")
+    return " \\\n".join(parts)
 
 
 async def execute_request(
@@ -70,6 +86,12 @@ async def execute_request(
         status_code=response.status_code,
         body=body_data,
         request_id=request_id,
+        curl=build_curl(
+            method=method.upper(),
+            url=str(response.request.url),
+            headers=headers,
+            body=body,
+        ),
     )
 
 

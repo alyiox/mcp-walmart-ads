@@ -64,6 +64,8 @@ async def test_execute_request_builds_correct_url() -> None:
     mock_response.json.return_value = {"campaigns": []}
     mock_response.status_code = 200
 
+    mock_response.request.url = "https://search.example.com/api/v1/api/v1/campaigns?advertiserId=123"
+
     with patch("mcp_walmart_ads.client.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.request = AsyncMock(return_value=mock_response)
@@ -83,6 +85,8 @@ async def test_execute_request_builds_correct_url() -> None:
     call_kwargs = mock_client.request.call_args
     assert call_kwargs.kwargs["url"] == "https://search.example.com/api/v1/api/v1/campaigns"
     assert call_kwargs.kwargs["method"] == "GET"
+    assert "curl -X GET" in result.curl
+    assert "WM_SEC.AUTH_SIGNATURE" in result.curl
 
 
 @pytest.mark.asyncio

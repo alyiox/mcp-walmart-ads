@@ -83,6 +83,15 @@ def cached_response_resource(request_id: str) -> str:
     return content
 
 
+@mcp.resource("wmc://curl/{request_id}")
+def cached_curl_resource(request_id: str) -> str:
+    """[WalmartAds] Retrieve cURL command for a previous API request. Auth headers are time-limited."""
+    data = cache.get(f"curl/{request_id}")
+    if data is None:
+        return f"No cURL command found for request_id={request_id} (may have expired)."
+    return f"# cURL (auth headers are time-limited)\n\n{data}"
+
+
 # ── tool ───────────────────────────────────────────────────────────────────────
 
 
@@ -187,6 +196,8 @@ async def walmart_ads_api(
         body=body,
     )
 
+    cache.put(f"curl/{response.request_id}", response.curl)
+
     body_str = (
         json.dumps(response.body, indent=2) if not isinstance(response.body, str) else response.body
     )
@@ -200,10 +211,15 @@ async def walmart_ads_api(
             f"[Response truncated: {len(body_bytes):,} bytes "
             f"> {config.truncate_threshold:,} byte threshold]\n"
             f"Full response cached at: wmc://responses/{response.request_id}\n\n"
-            f"{preview}\n... (truncated)"
+            f"{preview}\n... (truncated)\n\n"
+            f"cURL: wmc://curl/{response.request_id}"
         )
 
-    return f"HTTP {response.status_code}\n\n{body_str}"
+    return (
+        f"HTTP {response.status_code}\n\n"
+        f"{body_str}\n\n"
+        f"cURL: wmc://curl/{response.request_id}"
+    )
 
 
 _DISPLAY_SNAPSHOT_URL = "https://advertising.walmart.com/display/file/{snapshot_id}"
