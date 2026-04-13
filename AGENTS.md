@@ -26,6 +26,13 @@ The body is optional for trivial changes.
 
 ---
 
+## Release tags
+
+* Use the bare version as the tag name — **no `v` prefix** (e.g. `0.1.0a4`, not `v0.1.0a4``)
+* Tags must be annotated (`git tag -a`) with a structured release-notes message
+
+---
+
 ## Commits
 
 When generating commits via a shell:
