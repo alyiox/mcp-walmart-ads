@@ -70,3 +70,22 @@ PUT /api/v1/lineItems
 ```
 
 Body: array with `lineItemId` plus fields to update.
+
+### Update campaign delivery status
+
+```
+PUT /api/v1/campaigns/action
+```
+
+Body: JSON array (max 10 per batch; all same `advertiserId`).
+
+Fields:
+- `advertiserId` (integer, required)
+- `campaignId` (integer, required)
+- `action` (string, required) — `pause` | `resume` | `archive` | `unarchive`
+
+Action rules:
+- `pause` — LIVE or SCHEDULED campaigns
+- `resume` — PAUSED campaigns only
+- `archive` — DRAFT or SCHEDULED campaigns that never went live
+- `unarchive` — ARCHIVED campaigns only

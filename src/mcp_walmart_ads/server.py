@@ -27,9 +27,14 @@ mcp = FastMCP(
         "wmc://docs/search/catalog-item-search, wmc://docs/search/snapshot-reports, "
         "wmc://docs/search/top-search-trends, wmc://docs/search/advanced-insights, "
         "wmc://docs/search/stats, wmc://docs/search/audit-snapshot, "
-        "wmc://docs/display/campaigns, wmc://docs/display/targeting, "
-        "wmc://docs/display/audiences, wmc://docs/display/itemsets, "
-        "wmc://docs/display/snapshot-reports."
+        "wmc://docs/display/campaigns, wmc://docs/display/ad-groups, "
+        "wmc://docs/display/targeting, wmc://docs/display/audiences, "
+        "wmc://docs/display/itemsets, wmc://docs/display/itemset-campaign-association, "
+        "wmc://docs/display/catalog, wmc://docs/display/forecast, "
+        "wmc://docs/display/creative, wmc://docs/display/creative-associations, "
+        "wmc://docs/display/video, wmc://docs/display/folder, "
+        "wmc://docs/display/snapshot-reports, wmc://docs/display/stats, "
+        "wmc://docs/display/brand-landing-page."
     ),
 )
 
