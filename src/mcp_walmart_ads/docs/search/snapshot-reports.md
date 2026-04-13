@@ -56,6 +56,8 @@ Reference:
 - https://developer.walmart.com/advertising-partners-search/docs/retrieve-campaign-entity-snapshots
 - https://developer.walmart.com/advertising-partners-search/docs/sample-requests-for-create-entity-snapshot
 - https://developer.walmart.com/advertising-partners-search/docs/sample-responses-for-create-entity-snapshot
+- https://developer.walmart.com/advertising-partners-search/docs/create-entity-snapshot-brand-asset-manager
+- https://developer.walmart.com/advertising-partners-search/docs/retrieve-campaign-entity-brand-asset-manager
 
 ### Request entity snapshot
 
@@ -66,7 +68,7 @@ POST /api/v1/snapshot/entity
 Query params:
 - `advertiserId` (integer, required) — advertiser identifier
 - `entityStatus` (string, required) — `enabled`, `disabled`, or `all` (default: `enabled`)
-- `entityTypes` (string array, required) — one or more of: `campaign`, `adGroup`, `keyword`, `adItem`, `bidMultiplier`, `placement`, `sbaProfile`, `adGroupMedia`, `category`
+- `entityTypes` (string array, required) — one or more of: `campaign`, `adGroup`, `keyword`, `adItem`, `bidMultiplier`, `placement`, `sbaProfile`, `adGroupMedia`, `category`, `brandAsset`
 - `format` (string, optional) — `gzip` or `zip` (default: `zip`)
 
 Entity type notes:
@@ -74,6 +76,7 @@ Entity type notes:
 - `sbaProfile` — Sponsored Brands campaigns only
 - `adGroupMedia` — Sponsored Video campaigns only
 - `category` — Sponsored Brand campaigns only
+- `brandAsset` — returns empty when `entityStatus` is `disabled`; response includes associated ad groups and review statuses
 
 Response: `{ "snapshotId": "..." }`
 
@@ -93,7 +96,7 @@ Response:
 - `jobStatus` (string) — `pending` | `processing` | `done` | `failed` | `expired`
 - `details` (string) — download URL when `jobStatus` is `done`
 
-Output is JSON in zip/gzip containing arrays: `campaigns`, `adGroups`, `keywords`, `adItem`, `placementBidMultipliers`, `platformBidMultipliers`, `sbaProfiles`, `adGroupMedias`. Files expire after one day.
+Output is JSON in zip/gzip containing arrays: `campaigns`, `adGroups`, `keywords`, `adItem`, `placementBidMultipliers`, `platformBidMultipliers`, `sbaProfiles`, `adGroupMedias`, `brandAssets`. Files expire after one day.
 
 ## Item recommendations snapshot
 
