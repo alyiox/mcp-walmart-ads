@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, model_serializer
 
 from .client import download_file, execute_request
 from .config import load_config
@@ -37,6 +38,31 @@ mcp = FastMCP(
         "wmc://docs/display/brand-landing-page."
     ),
 )
+
+# ── tool result models ─────────────────────────────────────────────────────────
+
+
+class _ExcludeNone(BaseModel):
+    @model_serializer(mode="wrap")
+    def _exclude_none(self, handler: Any) -> dict[str, Any]:
+        return {k: v for k, v in handler(self).items() if v is not None}
+
+
+class ApiToolResult(_ExcludeNone):
+    status_code: int | None = None
+    body: Any | None = None
+    truncated: bool | None = None
+    cached_at: str | None = None  # wmc://responses/{request_id}
+    curl: str | None = None  # wmc://curl/{request_id}
+    error: str | None = None
+
+
+class DownloadToolResult(_ExcludeNone):
+    status_code: int | None = None
+    size_bytes: int | None = None
+    cached_at: str | None = None  # wmc://responses/{request_id}
+    error: str | None = None
+
 
 # ── resources ──────────────────────────────────────────────────────────────────
 
@@ -85,7 +111,7 @@ def cached_response_resource(request_id: str) -> str:
 
 @mcp.resource("wmc://curl/{request_id}")
 def cached_curl_resource(request_id: str) -> str:
-    """[WalmartAds] Retrieve cURL command for a previous API request. Auth headers are time-limited."""
+    """[WalmartAds] Retrieve cURL command for a previous API request."""
     data = cache.get(f"curl/{request_id}")
     if data is None:
         return f"No cURL command found for request_id={request_id} (may have expired)."
@@ -104,7 +130,7 @@ async def walmart_ads_api(
     path: str,
     params: dict[str, Any] | None = None,
     body: dict[str, Any] | list[Any] | None = None,
-) -> str:
+) -> ApiToolResult:
     r"""[WalmartAds] Execute authenticated Walmart Connect Ads API request.
 
     Args:
@@ -172,20 +198,23 @@ async def walmart_ads_api(
 
     if region_upper not in config.regions:
         available = ", ".join(config.regions.keys())
-        return f"Error: region '{region}' not found in config. Available: {available}"
+        msg = f"region '{region}' not found in config. Available: {available}"
+        return ApiToolResult(error=msg)
 
     if env_lower not in config.regions[region_upper]:
         available = ", ".join(config.regions[region_upper].keys())
-        return f"Error: env '{env}' not found for region '{region}'. Available: {available}"
+        msg = f"env '{env}' not found for region '{region}'. Available: {available}"
+        return ApiToolResult(error=msg)
 
     ad_type_lower = ad_type.lower()
     if ad_type_lower not in ("search", "display"):
-        return "Error: ad_type must be 'search' or 'display'."
+        return ApiToolResult(error="ad_type must be 'search' or 'display'.")
 
     env_cfg = config.regions[region_upper][env_lower]
 
     if ad_type_lower not in env_cfg.base_urls:
-        return f"Error: base_url for ad_type '{ad_type}' not configured for {region}/{env}."
+        msg = f"base_url for ad_type '{ad_type}' not configured for {region}/{env}."
+        return ApiToolResult(error=msg)
 
     response = await execute_request(
         cfg=env_cfg,
@@ -197,6 +226,7 @@ async def walmart_ads_api(
     )
 
     cache.put(f"curl/{response.request_id}", response.curl)
+    curl_ref = f"wmc://curl/{response.request_id}"
 
     body_str = (
         json.dumps(response.body, indent=2) if not isinstance(response.body, str) else response.body
@@ -205,20 +235,19 @@ async def walmart_ads_api(
 
     if len(body_bytes) > config.truncate_threshold:
         cache.put(response.request_id, response.body)
-        preview = body_str[: config.truncate_threshold].rsplit("\n", 1)[0]
-        return (
-            f"HTTP {response.status_code}\n"
-            f"[Response truncated: {len(body_bytes):,} bytes "
-            f"> {config.truncate_threshold:,} byte threshold]\n"
-            f"Full response cached at: wmc://responses/{response.request_id}\n\n"
-            f"{preview}\n... (truncated)\n\n"
-            f"cURL: wmc://curl/{response.request_id}"
+        preview = body_str[: config.truncate_threshold].rsplit("\n", 1)[0] + "\n... (truncated)"
+        return ApiToolResult(
+            status_code=response.status_code,
+            body=preview,
+            truncated=True,
+            cached_at=f"wmc://responses/{response.request_id}",
+            curl=curl_ref,
         )
 
-    return (
-        f"HTTP {response.status_code}\n\n"
-        f"{body_str}\n\n"
-        f"cURL: wmc://curl/{response.request_id}"
+    return ApiToolResult(
+        status_code=response.status_code,
+        body=response.body,
+        curl=curl_ref,
     )
 
 
@@ -231,7 +260,7 @@ async def walmart_ads_download_display_snapshot(
     env: str,
     snapshot_id: str,
     advertiser_id: int,
-) -> str:
+) -> DownloadToolResult:
     r"""[WalmartAds] Download a display snapshot file (report or entity).
 
     Display snapshot download URLs require authenticated requests with Walmart
@@ -249,11 +278,13 @@ async def walmart_ads_download_display_snapshot(
 
     if region_upper not in config.regions:
         available = ", ".join(config.regions.keys())
-        return f"Error: region '{region}' not found in config. Available: {available}"
+        msg = f"region '{region}' not found in config. Available: {available}"
+        return DownloadToolResult(error=msg)
 
     if env_lower not in config.regions[region_upper]:
         available = ", ".join(config.regions[region_upper].keys())
-        return f"Error: env '{env}' not found for region '{region}'. Available: {available}"
+        msg = f"env '{env}' not found for region '{region}'. Available: {available}"
+        return DownloadToolResult(error=msg)
 
     env_cfg = config.regions[region_upper][env_lower]
     url = _DISPLAY_SNAPSHOT_URL.format(snapshot_id=snapshot_id)
@@ -261,7 +292,7 @@ async def walmart_ads_download_display_snapshot(
     response = await download_file(cfg=env_cfg, url=url, params={"advertiserId": advertiser_id})
 
     if response.status_code != 200:
-        return f"HTTP {response.status_code}\n\nDownload failed."
+        return DownloadToolResult(status_code=response.status_code, error="Download failed.")
 
     try:
         text = gzip.decompress(response.content).decode()
@@ -269,10 +300,10 @@ async def walmart_ads_download_display_snapshot(
         text = response.content.decode()
 
     cache.put(response.request_id, text)
-    return (
-        f"HTTP {response.status_code}\n"
-        f"Downloaded {len(text.encode()):,} bytes.\n"
-        f"Content available at: wmc://responses/{response.request_id}"
+    return DownloadToolResult(
+        status_code=response.status_code,
+        size_bytes=len(text.encode()),
+        cached_at=f"wmc://responses/{response.request_id}",
     )
 
 
