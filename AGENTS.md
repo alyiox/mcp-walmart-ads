@@ -70,6 +70,8 @@ Follow existing project conventions.
 * Use `uv` exclusively for dependency management instead of `pip`
 * Always prefix tool and script invocations with `uv run` so they execute inside the managed environment
 * Do not manually create, activate, or delete `.venv` directories
+* Use `uv version <new-version>` to bump the project version — do **not** edit `pyproject.toml` directly
+* Always commit both `pyproject.toml` and `uv.lock` together after a version bump
 
 ---
 
