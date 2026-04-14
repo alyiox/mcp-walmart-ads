@@ -64,7 +64,9 @@ async def test_execute_request_builds_correct_url() -> None:
     mock_response.json.return_value = {"campaigns": []}
     mock_response.status_code = 200
 
-    mock_response.request.url = "https://search.example.com/api/v1/api/v1/campaigns?advertiserId=123"
+    mock_response.request.url = (
+        "https://search.example.com/api/v1/api/v1/campaigns?advertiserId=123"
+    )
 
     with patch("mcp_walmart_ads.client.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
