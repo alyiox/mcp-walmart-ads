@@ -7,7 +7,7 @@
 
 MCP server for [Walmart Connect Ads APIs](https://developer.walmart.com/advertising-partners) — Sponsored Search and Display.
 
-Exposes a single generic tool (`walmart_ads_api`) that acts as an authenticated proxy: the AI agent decides which endpoint to call, the server handles RSA-SHA256 signing and auth headers automatically.
+Exposes two tools — a generic API proxy (`walmart_ads_api`) and a display-snapshot downloader (`walmart_ads_download_display_snapshot`). The AI agent decides which endpoint to call; the server handles RSA-SHA256 signing and auth headers automatically.
 
 ## Features
 
@@ -42,11 +42,23 @@ npx -y @modelcontextprotocol/inspector uv run mcp-walmart-ads
 
 ## Configuration
 
+The config file lives under your home directory at `~/.config/mcp-walmart-ads/config.json`.
+
+> **Windows note:** `~` maps to `%USERPROFILE%` (typically `C:\Users\<you>`), so the
+> full path is `%USERPROFILE%\.config\mcp-walmart-ads\config.json`.
+
 **1. Create the config directory and copy the example**
 
 ```bash
-mkdir -p ~/.config/mcp-walmart-ads/keys
+# Unix-like (macOS, Linux, WSL, …)
+mkdir -p ~/.config/mcp-walmart-ads/keys/us
 cp config.example.json ~/.config/mcp-walmart-ads/config.json
+```
+
+```powershell
+# Windows (PowerShell)
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.config\mcp-walmart-ads\keys\us"
+Copy-Item config.example.json "$env:USERPROFILE\.config\mcp-walmart-ads\config.json"
 ```
 
 **2. Edit `~/.config/mcp-walmart-ads/config.json`**
@@ -59,7 +71,7 @@ cp config.example.json ~/.config/mcp-walmart-ads/config.json
     "US": {
       "production": {
         "consumer_id": "your-consumer-id",
-        "private_key": "./keys/us-prod.pem",
+        "private_key": "./keys/us/prod.pem",
         "private_key_version": "1",
         "bearer_token": "your-bearer-token",
         "base_urls": {
@@ -69,7 +81,7 @@ cp config.example.json ~/.config/mcp-walmart-ads/config.json
       },
       "staging": {
         "consumer_id": "your-staging-consumer-id",
-        "private_key": "./keys/us-staging.pem",
+        "private_key": "./keys/us/staging.pem",
         "private_key_version": "1",
         "bearer_token": "your-staging-bearer-token",
         "base_urls": {
@@ -84,7 +96,7 @@ cp config.example.json ~/.config/mcp-walmart-ads/config.json
 
 **3. Place your RSA private key PEM files in `~/.config/mcp-walmart-ads/keys/`**
 
-Key paths in the config are resolved relative to the config directory, so `./keys/us-prod.pem` resolves to `~/.config/mcp-walmart-ads/keys/us-prod.pem`.
+Key paths in the config are resolved relative to the config directory, so `./keys/us/prod.pem` resolves to `~/.config/mcp-walmart-ads/keys/us/prod.pem`.
 
 | Config field | Description |
 |---|---|
@@ -97,34 +109,66 @@ Key paths in the config are resolved relative to the config directory, so `./key
 | `regions.<R>.<E>.base_urls.search` | Sponsored Search API base URL |
 | `regions.<R>.<E>.base_urls.display` | Display API base URL |
 
-## Tool: `walmart_ads_api`
+## Tools
 
-Parameters shown in the client UI for user approval before execution:
+### `walmart_ads_api`
+
+Execute any Walmart Connect Ads API endpoint. The agent picks the method and path; the server handles RSA-SHA256 signing.
 
 | Parameter | Required | Description |
 |---|---|---|
 | `region` | yes | e.g. `US` |
 | `env` | yes | `production` or `staging` |
 | `ad_type` | yes | `search` or `display` |
-| `method` | yes | `GET`, `POST`, `PUT`, `DELETE` |
+| `method` | yes | `GET`, `POST`, `PUT`, or `DELETE` |
 | `path` | yes | e.g. `/api/v1/campaigns` |
 | `params` | no | Query string parameters (JSON object) |
-| `body` | no | JSON request body (for POST/PUT) |
+| `body` | no | JSON request body for POST/PUT (object or array) |
 
-## API reference docs (MCP resources)
+### `walmart_ads_download_display_snapshot`
 
-The server bundles API reference docs the agent can read to learn endpoint schemas:
+Download a display snapshot file (report or entity). Display snapshot URLs require authenticated requests, so this tool handles the signing automatically. Use it with the snapshot ID from the `details` field after polling a display snapshot to `done` status.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `region` | yes | e.g. `US` |
+| `env` | yes | `production` or `staging` |
+| `snapshot_id` | yes | Snapshot ID from the `details` URL |
+| `advertiser_id` | yes | Advertiser ID used when creating the snapshot |
+
+## MCP resources
+
+### API reference docs
+
+The server bundles API reference docs as MCP resources so the agent can read endpoint schemas on demand. One resource per endpoint group, following the URI pattern `wmc://docs/{ad_type}/{group}` — for example `wmc://docs/search/campaigns` or `wmc://docs/display/audiences`.
+
+The full list is generated from the markdown files in [`src/mcp_walmart_ads/docs/`](src/mcp_walmart_ads/docs/). Current groups:
+
+| Search | Display |
+|---|---|
+| campaigns | campaigns |
+| ad-groups | ad-groups |
+| ad-items | targeting |
+| keywords | audiences |
+| placements | itemsets |
+| bid-multipliers | itemset-campaign-association |
+| sponsored-brands | catalog |
+| sponsored-videos | forecast |
+| catalog-item-search | creative |
+| snapshot-reports | creative-associations |
+| top-search-trends | video |
+| advanced-insights | folder |
+| stats | snapshot-reports |
+| audit-snapshot | stats |
+| | brand-landing-page |
+
+### Dynamic resources
 
 | Resource URI | Description |
 |---|---|
-| `wmc://docs/search/campaigns` | Sponsored Search campaigns |
-| `wmc://docs/search/ad-groups` | Sponsored Search ad groups |
-| `wmc://docs/search/keywords` | Sponsored Search keywords |
-| `wmc://docs/search/snapshot-reports` | Sponsored Search snapshot reports |
-| `wmc://docs/display/campaigns` | Display campaigns |
-| `wmc://docs/display/snapshot-reports` | Display snapshot reports |
-
-Truncated API responses are cached in memory and accessible via `wmc://responses/{request_id}`.
+| `wmc://config` | Available regions, environments, and ad types from your config |
+| `wmc://responses/{request_id}` | Full body of a truncated API response (cached in memory, TTL from config) |
+| `wmc://curl/{request_id}` | Reproducible cURL command for a previous API request |
 
 ## MCP host examples
 
