@@ -5,6 +5,8 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
+<!-- mcp-name: io.github.alyiox/mcp-walmart-ads -->
+
 MCP server for [Walmart Connect Ads APIs](https://developer.walmart.com/advertising-partners) — Sponsored Search and Display.
 
 Exposes two tools — a generic API proxy (`walmart_ads_api`) and a display-snapshot downloader (`walmart_ads_download_display_snapshot`). The AI agent decides which endpoint to call; the server handles RSA-SHA256 signing and auth headers automatically.
