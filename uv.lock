@@ -305,7 +305,7 @@ cli = [
 
 [[package]]
 name = "mcp-walmart-ads"
-version = "0.1.0a6"
+version = "0.1.0a7"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
