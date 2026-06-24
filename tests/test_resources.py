@@ -4,9 +4,7 @@ import time
 
 from mcp_walmart_ads.resources import (
     ResponseCache,
-    list_doc_resources,
     read_cached_response,
-    read_doc_resource,
 )
 
 
@@ -48,25 +46,3 @@ def test_read_cached_response_json() -> None:
 def test_read_cached_response_missing() -> None:
     cache = ResponseCache()
     assert read_cached_response("nope", cache) is None
-
-
-def test_list_doc_resources_nonempty() -> None:
-    docs = list_doc_resources()
-    assert len(docs) >= 6
-    uris = [d["uri"] for d in docs]
-    assert "wmc://docs/search/campaigns" in uris
-    assert "wmc://docs/display/snapshot-reports" in uris
-
-
-def test_read_doc_resource_valid() -> None:
-    content = read_doc_resource("wmc://docs/search/campaigns")
-    assert content is not None
-    assert "GET /api/v1/campaigns" in content
-
-
-def test_read_doc_resource_invalid() -> None:
-    assert read_doc_resource("wmc://docs/nonexistent/endpoint") is None
-
-
-def test_read_doc_resource_wrong_prefix() -> None:
-    assert read_doc_resource("other://docs/search/campaigns") is None

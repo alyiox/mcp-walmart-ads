@@ -9,16 +9,17 @@
 
 MCP server for [Walmart Connect Ads APIs](https://developer.walmart.com/advertising-partners) — Sponsored Search and Display.
 
-Exposes two tools — a generic API proxy (`walmart_ads_api`) and a display-snapshot downloader (`walmart_ads_download_display_snapshot`). The AI agent decides which endpoint to call; the server handles RSA-SHA256 signing and auth headers automatically.
+Exposes spec-driven discovery (`list_endpoints`, `describe_endpoint`), a generic API proxy (`call_endpoint`), a runtime spec refresher (`refresh_specs`), and a display-snapshot downloader (`download_display_snapshot`). The AI agent discovers endpoints from bundled OpenAPI specs then calls them; the server handles RSA-SHA256 signing and auth headers automatically.
 
 ## Features
 
-- **One tool, any endpoint** — no code changes needed when APIs evolve
+- **Spec-driven discovery** — list/describe endpoints from bundled OpenAPI specs, refreshable at runtime
+- **Any endpoint** — call by operation id or raw method+path (raw path reaches unpublished endpoints); no code changes when APIs evolve
 - Supports both Sponsored Search and Display API families
 - Multi-region, multi-environment (production + staging) via config file
 - Per-request RSA-SHA256 signing with automatic header construction
 - Large responses truncated with full data available via MCP resource URI
-- Bundled API reference docs served as MCP resources so the agent knows endpoint schemas
+- Bundled OpenAPI specs (refreshable at runtime) give the agent endpoint schemas on demand
 
 ## Requirements
 
@@ -113,21 +114,52 @@ Key paths in the config are resolved relative to the config directory, so `./key
 
 ## Tools
 
-### `walmart_ads_api`
+### `list_endpoints`
 
-Execute any Walmart Connect Ads API endpoint. The agent picks the method and path; the server handles RSA-SHA256 signing.
+List operations from the bundled OpenAPI spec for an `ad_type`, with optional filters.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `ad_type` | yes | `search` or `display` |
+| `query` | no | Case-insensitive substring match on operationId, path, or summary |
+| `tag` | no | Filter to operations whose OpenAPI tags include this value |
+| `method` | no | Filter by HTTP verb |
+
+### `describe_endpoint`
+
+Return one operation plus the `components.schemas` reachable from it (its `$ref` closure), so request bodies and responses can be built without the full spec.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `ad_type` | yes | `search` or `display` |
+| `operation_id` | yes | Spec operation id (from `list_endpoints`) |
+
+### `call_endpoint`
+
+Execute any Walmart Connect Ads API endpoint. Identify it by `operation_id`, or by raw `method` + `path`. Raw method+path also reaches alpha/beta/unpublished endpoints that are not in the bundled specs. The server handles RSA-SHA256 signing.
 
 | Parameter | Required | Description |
 |---|---|---|
 | `region` | yes | e.g. `US` |
 | `env` | yes | `production` or `staging` |
 | `ad_type` | yes | `search` or `display` |
-| `method` | yes | `GET`, `POST`, `PUT`, or `DELETE` |
-| `path` | yes | e.g. `/api/v1/campaigns` |
+| `operation_id` | no* | Spec operation id; resolves `method`+`path` |
+| `method` | no* | `GET`, `POST`, `PUT`, `PATCH`, or `DELETE` |
+| `path` | no* | e.g. `/api/v1/campaigns` |
 | `params` | no | Query string parameters (JSON object) |
 | `body` | no | JSON request body for POST/PUT (object or array) |
 
-### `walmart_ads_download_display_snapshot`
+\* Provide either `operation_id`, or both `method` and `path`.
+
+### `refresh_specs`
+
+Re-fetch the bundled OpenAPI specs from ReadMe's public api-registry into a user cache (`~/.cache/mcp-walmart-ads/specs/`) that takes precedence over the bundled copy.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `spec_id` | no | One spec to refresh (e.g. `search/sponsored-products`); omit to refresh all |
+
+### `download_display_snapshot`
 
 Download a display snapshot file (report or entity). Display snapshot URLs require authenticated requests, so this tool handles the signing automatically. Use it with the snapshot ID from the `details` field after polling a display snapshot to `done` status.
 
@@ -140,29 +172,7 @@ Download a display snapshot file (report or entity). Display snapshot URLs requi
 
 ## MCP resources
 
-### API reference docs
-
-The server bundles API reference docs as MCP resources so the agent can read endpoint schemas on demand. One resource per endpoint group, following the URI pattern `wmc://docs/{ad_type}/{group}` — for example `wmc://docs/search/campaigns` or `wmc://docs/display/audiences`.
-
-The full list is generated from the markdown files in [`src/mcp_walmart_ads/docs/`](src/mcp_walmart_ads/docs/). Current groups:
-
-| Search | Display |
-|---|---|
-| campaigns | campaigns |
-| ad-groups | ad-groups |
-| ad-items | targeting |
-| keywords | audiences |
-| placements | itemsets |
-| bid-multipliers | itemset-campaign-association |
-| sponsored-brands | catalog |
-| sponsored-videos | forecast |
-| catalog-item-search | creative |
-| snapshot-reports | creative-associations |
-| top-search-trends | video |
-| advanced-insights | folder |
-| stats | snapshot-reports |
-| audit-snapshot | stats |
-| | brand-landing-page |
+Endpoint schemas come from the bundled OpenAPI specs via `list_endpoints` / `describe_endpoint` (see [Tools](#tools)), not from static resources.
 
 ### Dynamic resources
 

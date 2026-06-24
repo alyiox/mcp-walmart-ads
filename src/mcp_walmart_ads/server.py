@@ -7,9 +7,11 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, model_serializer
 
+from . import discovery, specs
 from .client import download_file, execute_request
 from .config import load_config
-from .resources import ResponseCache, list_doc_resources, read_cached_response, read_doc_resource
+from .resources import ResponseCache, read_cached_response
+from .specs import SpecError
 
 config = load_config()
 cache = ResponseCache(ttl_seconds=config.response_cache_ttl)
@@ -18,24 +20,12 @@ mcp = FastMCP(
     "Walmart Connect Ads",
     instructions=(
         "MCP server for Walmart Connect Ads APIs. "
-        "Use the walmart_ads_api tool to execute API calls. "
-        "The tool description includes an endpoint index with methods and paths. "
-        "For request/response field details, read the doc resources: "
-        "wmc://docs/search/campaigns, wmc://docs/search/ad-groups, "
-        "wmc://docs/search/ad-items, wmc://docs/search/keywords, "
-        "wmc://docs/search/placements, wmc://docs/search/bid-multipliers, "
-        "wmc://docs/search/sponsored-brands, wmc://docs/search/sponsored-videos, "
-        "wmc://docs/search/catalog-item-search, wmc://docs/search/snapshot-reports, "
-        "wmc://docs/search/top-search-trends, wmc://docs/search/advanced-insights, "
-        "wmc://docs/search/stats, wmc://docs/search/audit-snapshot, "
-        "wmc://docs/display/campaigns, wmc://docs/display/ad-groups, "
-        "wmc://docs/display/targeting, wmc://docs/display/audiences, "
-        "wmc://docs/display/itemsets, wmc://docs/display/itemset-campaign-association, "
-        "wmc://docs/display/catalog, wmc://docs/display/forecast, "
-        "wmc://docs/display/creative, wmc://docs/display/creative-associations, "
-        "wmc://docs/display/video, wmc://docs/display/folder, "
-        "wmc://docs/display/snapshot-reports, wmc://docs/display/stats, "
-        "wmc://docs/display/brand-landing-page."
+        "Discover endpoints with list_endpoints (filter by query/tag/method) "
+        "and inspect one with describe_endpoint (returns the operation plus "
+        "its schema closure). Execute with call_endpoint — by operation_id, or by raw "
+        "method+path (raw path also reaches alpha/beta/unpublished endpoints not in the "
+        "specs). The specs are bundled and can be refreshed at runtime from the public "
+        "registry with refresh_specs."
     ),
 )
 
@@ -65,28 +55,6 @@ class DownloadToolResult(_ExcludeNone):
 
 
 # ── resources ──────────────────────────────────────────────────────────────────
-
-
-def _register_doc_resources() -> None:
-    """Register each bundled doc as a static resource (not a template)."""
-
-    def _make_handler(uri: str):  # noqa: ANN202 – closure factory
-        def handler() -> str:
-            content = read_doc_resource(uri)
-            return content or f"No documentation found for {uri}"
-
-        return handler
-
-    for doc in list_doc_resources():
-        mcp.resource(
-            doc["uri"],
-            name=doc["name"],
-            description=doc["description"],
-            mime_type=doc["mime_type"],
-        )(_make_handler(doc["uri"]))
-
-
-_register_doc_resources()
 
 
 @mcp.resource("wmc://config")
@@ -122,76 +90,38 @@ def cached_curl_resource(request_id: str) -> str:
 
 
 @mcp.tool()
-async def walmart_ads_api(
+async def call_endpoint(
     region: str,
     env: str,
     ad_type: str,
-    method: str,
-    path: str,
+    method: str | None = None,
+    path: str | None = None,
+    operation_id: str | None = None,
     params: dict[str, Any] | None = None,
     body: dict[str, Any] | list[Any] | None = None,
 ) -> ApiToolResult:
     r"""[WalmartAds] Execute authenticated Walmart Connect Ads API request.
 
+    Specify the endpoint either by ``operation_id`` (discovered via
+    list_endpoints / describe_endpoint) or by raw
+    ``method`` + ``path``. Raw method+path also reaches alpha/beta/unpublished
+    endpoints that are not in the bundled specs.
+
     Args:
         region: API region, e.g. US. Src: config.
         env: Target environment — production or staging. Src: config.
         ad_type: API family — search or display. Src: config.
-        method: HTTP method — GET, POST, PUT, or DELETE.
-        path: API path after base URL, e.g. /api/v1/campaigns.
+        method: HTTP method — GET, POST, PUT, PATCH, or DELETE. Required unless
+            operation_id is given.
+        path: API path after base URL, e.g. /api/v1/campaigns. Required unless
+            operation_id is given.
+        operation_id: Spec operation id (e.g. AdGroupList). Resolves method+path
+            from the ad_type spec. Src: operations.
         params: Query string parameters as a JSON object.
         body: JSON request body for POST/PUT (object or array when the API requires it).
 
-    Endpoint index (read wmc://docs/{ad_type}/{group} for field details):
-
-    search — Sponsored Search (Sponsored Products, SBA, Video)
-      GET    /api/v1/campaigns          list campaigns
-      POST   /api/v1/campaigns          create campaigns (array body)
-      PUT    /api/v1/campaigns          update campaigns (array body)
-      PUT    /api/v1/campaigns/delete   delete campaigns (array body)
-      GET    /api/v1/adGroups           list ad groups
-      POST   /api/v1/adGroups           create ad groups (array body)
-      PUT    /api/v1/adGroups           update ad groups (array body)
-      PUT    /api/v1/adGroups/delete    delete ad groups (array body)
-      GET    /api/v1/keywords           list keywords
-      POST   /api/v1/keywords           create keywords (array body)
-      PUT    /api/v1/keywords           update keywords (array body)
-      PUT    /api/v1/keywords/delete    delete keywords (array body)
-      POST   /api/v2/snapshot/report              request performance report snapshot
-      GET    /api/v2/snapshot                    retrieve performance report snapshot
-      POST   /api/v1/snapshot/entity             request entity snapshot
-      GET    /api/v1/snapshot                    retrieve entity snapshot
-      POST   /api/v1/snapshot/insight            request insight snapshot
-      POST   /api/v1/snapshot/recommendations    request item/keyword recommendations
-      POST   /api/v2/snapshot/recommendations    request campaign recommendations
-
-    display — Display Advertising
-      GET    /api/v1/campaignGroups     list campaign groups
-      POST   /api/v1/campaignGroups     create campaign group
-      PUT    /api/v1/campaignGroups     update campaign group
-      GET    /api/v1/lineItems          list line items
-      POST   /api/v1/lineItems          create line item
-      PUT    /api/v1/lineItems          update line item
-      POST   /api/v2/targeting/list      list contextual/behavioral targets
-      POST   /api/v1/geoLocations/list  list geo location targets
-      POST   /api/v1/audiences          create custom audience
-      PATCH  /api/v1/audiences          update custom audience
-      POST   /api/v1/audiences/list     list custom audiences
-      POST   /api/v1/audiences/brand    create brand audience
-      GET    /api/v1/audiences/brand/status  get brand audience status
-      POST   /api/v1/audiences/estimate      audience size estimate
-      POST   /api/v1/audiences/intelligence  audience intelligence
-      POST   /api/v1/itemset            create itemset
-      POST   /api/v1/itemsets/list      list itemsets
-      PUT    /api/v1/itemset            update itemset
-      POST   /api/v1/itemset/info       get itemset info
-      POST   /api/v1/itemset/expression get itemset expression
-      POST   /api/v1/snapshot/report    request snapshot report
-      GET    /api/v1/snapshot           retrieve snapshot (report or entity)
-      POST   /api/v1/snapshot/entity    request entity snapshot
-
     Display snapshot files require authenticated download — use
-    walmart_ads_download_display_snapshot with the URL from the `details` field.
+    download_display_snapshot with the URL from the `details` field.
     """
     region_upper = region.upper()
     env_lower = env.lower()
@@ -209,6 +139,15 @@ async def walmart_ads_api(
     ad_type_lower = ad_type.lower()
     if ad_type_lower not in ("search", "display"):
         return ApiToolResult(error="ad_type must be 'search' or 'display'.")
+
+    if operation_id is not None:
+        try:
+            op = discovery.get_operation(ad_type_lower, operation_id)
+        except SpecError as e:
+            return ApiToolResult(error=str(e))
+        method, path = op.method, op.path
+    if not method or not path:
+        return ApiToolResult(error="provide operation_id, or both method and path.")
 
     env_cfg = config.regions[region_upper][env_lower]
 
@@ -255,7 +194,7 @@ _DISPLAY_SNAPSHOT_URL = "https://advertising.walmart.com/display/file/{snapshot_
 
 
 @mcp.tool()
-async def walmart_ads_download_display_snapshot(
+async def download_display_snapshot(
     region: str,
     env: str,
     snapshot_id: str,
@@ -305,6 +244,66 @@ async def walmart_ads_download_display_snapshot(
         size_bytes=len(text.encode()),
         cached_at=f"wmc://responses/{response.request_id}",
     )
+
+
+# ── discovery + refresh tools ────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def list_endpoints(
+    ad_type: str,
+    query: str | None = None,
+    tag: str | None = None,
+    method: str | None = None,
+) -> dict[str, Any]:
+    r"""[WalmartAds] List OpenAPI operations for an ad_type with optional filters.
+
+    Args:
+        ad_type: API family — search or display. Src: config.
+        query: Case-insensitive substring match on operationId, path, or summary.
+        tag: Filter to operations whose OpenAPI tags include this value.
+        method: Filter by HTTP verb — GET, POST, PUT, PATCH, or DELETE.
+    """
+    try:
+        endpoints = discovery.list_endpoints(ad_type.lower(), query=query, tag=tag, method=method)
+    except SpecError as e:
+        return {"error": str(e)}
+    return {"ad_type": ad_type.lower(), "count": len(endpoints), "endpoints": endpoints}
+
+
+@mcp.tool()
+async def describe_endpoint(ad_type: str, operation_id: str) -> dict[str, Any]:
+    r"""[WalmartAds] Describe one OpenAPI operation with its schema closure.
+
+    Returns the operation plus every ``components.schemas`` entry reachable from
+    it, so request bodies and responses can be built without the full spec.
+
+    Args:
+        ad_type: API family — search or display. Src: config.
+        operation_id: Spec operation id. Src: operations.
+    """
+    try:
+        return discovery.describe_endpoint(ad_type.lower(), operation_id)
+    except SpecError as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def refresh_specs(spec_id: str | None = None) -> dict[str, Any]:
+    r"""[WalmartAds] Refresh bundled OpenAPI specs from ReadMe's public registry.
+
+    Re-fetches the latest spec JSON into a user cache that takes precedence over
+    the bundled copy. Omit spec_id to refresh all specs.
+
+    Args:
+        spec_id: One of search/sponsored-products, display/display-rest-api,
+            display/ad-id-token-generation, display/conversion-rest-api. Src: specs.
+    """
+    try:
+        results = await specs.refresh(spec_id)
+    except SpecError as e:
+        return {"error": str(e)}
+    return {"refreshed": results}
 
 
 # ── entry point ────────────────────────────────────────────────────────────────

@@ -1,0 +1,512 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "description": "Conversion REST API Specifications",
+    "title": "Conversion REST API",
+    "version": "1.0"
+  },
+  "servers": [
+    {
+      "url": "https://developer.api.us.walmart.com/api-proxy/service/capi/service/v1",
+      "description": "Generated server url"
+    }
+  ],
+  "security": [
+    {
+      "auth_token": []
+    },
+    {
+      "consumer_id": []
+    },
+    {
+      "timestamp": []
+    },
+    {
+      "auth_signature": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Send Events"
+    },
+    {
+      "name": "Register Custom Events"
+    },
+    {
+      "name": "Get Report Of Events"
+    }
+  ],
+  "paths": {
+    "/v1/conversion/events": {
+      "post": {
+        "operationId": "eventSave",
+        "parameters": [
+          {
+            "name": "request-id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "items": {
+                  "$ref": "#/components/schemas/CapiRequestDto"
+                },
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapiResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "auth_signature": [],
+            "consumer_id": [],
+            "auth_token": [],
+            "timestamp": []
+          }
+        ],
+        "summary": "Send Events",
+        "tags": [
+          "Send Events"
+        ],
+        "x-content-type": "application/json",
+        "x-accepts": "application/json",
+        "x-tags": [
+          {
+            "tag": "Send Events"
+          }
+        ]
+      }
+    },
+    "/v1/conversion/register-events": {
+      "post": {
+        "operationId": "saveCustomEvent",
+        "parameters": [
+          {
+            "name": "request-id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomEventsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "auth_signature": [],
+            "consumer_id": [],
+            "auth_token": [],
+            "timestamp": []
+          }
+        ],
+        "summary": "Register Custom Events",
+        "tags": [
+          "Register Custom Events"
+        ],
+        "x-content-type": "application/json",
+        "x-accepts": "application/json",
+        "x-tags": [
+          {
+            "tag": "Register Custom Events"
+          }
+        ]
+      }
+    },
+    "/v1/conversion/report": {
+      "get": {
+        "operationId": "getEventReport",
+        "parameters": [
+          {
+            "name": "request-id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeZone",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "UTC"
+            }
+          },
+          {
+            "name": "eventName",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "advertiserId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventReportResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "auth_signature": [],
+            "consumer_id": [],
+            "auth_token": [],
+            "timestamp": []
+          }
+        ],
+        "summary": "Get Report Of Events",
+        "tags": [
+          "Get Report Of Events"
+        ],
+        "x-accepts": "application/json",
+        "x-tags": [
+          {
+            "tag": "Get Report Of Events"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorDescription": {
+        "type": "object",
+        "properties": {
+          "errorCode": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ErrorDescription"
+            }
+          }
+        }
+      },
+      "AdsMetadata": {
+        "type": "object",
+        "properties": {
+          "adCampaignId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "adId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "adClickId": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "CapiRequestDto": {
+        "required": [
+          "events",
+          "advertiserId"
+        ],
+        "type": "object",
+        "properties": {
+          "advertiserId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "events": {
+            "maxItems": 2147483647,
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventDetails"
+            }
+          },
+          "testEvent": {
+            "$ref": "#/components/schemas/TestEventDto"
+          }
+        }
+      },
+      "EventDetails": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string"
+          },
+          "eventName": {
+            "type": "string"
+          },
+          "eventValue": {
+            "type": "string"
+          },
+          "eventTimestamp": {
+            "type": "string"
+          },
+          "processedTimestamp": {
+            "type": "string"
+          },
+          "userIdentifier": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserData"
+            }
+          },
+          "adsMetadata": {
+            "$ref": "#/components/schemas/AdsMetadata"
+          },
+          "pageUrl": {
+            "type": "string"
+          },
+          "referrerUrl": {
+            "type": "string"
+          },
+          "engagementType": {
+            "type": "string"
+          },
+          "conversionPath": {
+            "type": "string"
+          },
+          "privacySettings": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TestEventDto": {
+        "type": "object",
+        "properties": {
+          "testDescription": {
+            "type": "string"
+          },
+          "isTestEvent": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UserData": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "ipAddress": {
+            "type": "string"
+          }
+        }
+      },
+      "CapiResponseDto": {
+        "type": "object",
+        "properties": {
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "CustomEventsDto": {
+        "required": [
+          "eventDescription",
+          "eventName",
+          "advertiserId"
+        ],
+        "type": "object",
+        "properties": {
+          "advertiserId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "eventName": {
+            "type": "string"
+          },
+          "eventDescription": {
+            "type": "string"
+          }
+        }
+      },
+      "EventReportResponseDto": {
+        "type": "object"
+      },
+      "EventsDto": {
+        "type": "object",
+        "properties": {
+          "standard": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "custom": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "EventsResponseDto": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "$ref": "#/components/schemas/EventsDto"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "auth_signature": {
+        "in": "header",
+        "name": "WM_SEC.AUTH_SIGNATURE",
+        "type": "apiKey"
+      },
+      "consumer_id": {
+        "in": "header",
+        "name": "WM_CONSUMER.ID",
+        "type": "apiKey"
+      },
+      "auth_token": {
+        "in": "query",
+        "name": "Authorization",
+        "type": "apiKey"
+      },
+      "timestamp": {
+        "in": "header",
+        "name": "WM_CONSUMER.intimestamp",
+        "type": "apiKey"
+      }
+    }
+  }
+}

@@ -1,0 +1,306 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Ad Id/token Generation Service",
+    "description": "Explore APIs exposed by Ad Id Generation Service.",
+    "version": "1.0"
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/api/v1/token/validate": {
+      "post": {
+        "tags": [
+          "external-id-controller"
+        ],
+        "summary": "Validate Ad Id tokens",
+        "operationId": "validateToken",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Ad Id validated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenReq"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid client request."
+          }
+        }
+      }
+    },
+    "/api/v1/id-gen/{type}/ids": {
+      "post": {
+        "tags": [
+          "external-id-controller"
+        ],
+        "summary": "Generate Bulk Ad Ids",
+        "operationId": "genExtIds",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenIdReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Ad Id created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenIdRes"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid client request."
+          }
+        }
+      }
+    },
+    "/api/v1/token/{id}": {
+      "get": {
+        "tags": [
+          "external-id-controller"
+        ],
+        "summary": "Generate Ad Id token",
+        "operationId": "getToken",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Ad Id created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenRes"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid client request."
+          }
+        }
+      }
+    },
+    "/api/v1/id-gen/{type}/{id}": {
+      "get": {
+        "tags": [
+          "external-id-controller"
+        ],
+        "summary": "Generate Ad Id",
+        "operationId": "getExtId",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Ad Id created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdRes"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid client request."
+          }
+        }
+      }
+    },
+    "/api/v1/id-mgmt/expired/salt": {
+      "get": {
+        "tags": [
+          "external-id-controller"
+        ],
+        "summary": "Get Salts and Bucket expired since given date and hour Eg. since= 2023-10-15T10:15:30Z",
+        "operationId": "getExpiredBuckets",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Expired buckets fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenIdRes"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid client request."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "TokenReq": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "GenIdReq": {
+        "type": "object",
+        "properties": {
+          "origIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ExternalAdId": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "idType": {
+            "type": "string"
+          },
+          "extId": {
+            "type": "string"
+          },
+          "bucketId": {
+            "type": "string"
+          }
+        }
+      },
+      "GenIdRes": {
+        "type": "object",
+        "properties": {
+          "extAdIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExternalAdId"
+            }
+          }
+        }
+      },
+      "TokenRes": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "expTs": {
+            "type": "string"
+          }
+        }
+      },
+      "SaltBucketDetails": {
+        "type": "object",
+        "properties": {
+          "bucketId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "salt": {
+            "type": "string"
+          },
+          "expMth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expYr": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "IdRes": {
+        "type": "object",
+        "properties": {
+          "origId": {
+            "type": "string"
+          },
+          "extId": {
+            "type": "string"
+          },
+          "bucketId": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "basicScheme": {
+        "type": "http",
+        "scheme": "basic"
+      }
+    }
+  }
+}
