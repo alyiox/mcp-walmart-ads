@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import gzip
 import json
-from typing import Any
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, model_serializer
+from pydantic import BaseModel, Field, model_serializer
 
 from . import discovery, specs
 from .client import download_file, execute_request
@@ -57,9 +57,12 @@ class DownloadToolResult(_ExcludeNone):
 # ── resources ──────────────────────────────────────────────────────────────────
 
 
-@mcp.resource("wmc://config")
+@mcp.resource(
+    "wmc://config",
+    name="config",
+    description="[WalmartAds] Available regions, environments, and ad types. Src: config.",
+)
 def get_config() -> str:
-    """[WalmartAds] Available regions, environments, and ad types. Src: config."""
     result: dict[str, Any] = {}
     for region, envs in config.regions.items():
         result[region] = {}
@@ -68,18 +71,24 @@ def get_config() -> str:
     return json.dumps({"regions": result}, indent=2)
 
 
-@mcp.resource("wmc://responses/{request_id}")
+@mcp.resource(
+    "wmc://responses/{request_id}",
+    name="cached_response",
+    description="[WalmartAds] Retrieve full cached API response. Src: responses.",
+)
 def cached_response_resource(request_id: str) -> str:
-    """[WalmartAds] Retrieve full cached API response. Src: responses."""
     content = read_cached_response(request_id, cache)
     if content is None:
         return f"No cached response found for request_id={request_id} (may have expired)."
     return content
 
 
-@mcp.resource("wmc://curl/{request_id}")
+@mcp.resource(
+    "wmc://curl/{request_id}",
+    name="request_curl",
+    description="[WalmartAds] Retrieve cURL command for a previous API request. Src: responses.",
+)
 def cached_curl_resource(request_id: str) -> str:
-    """[WalmartAds] Retrieve cURL command for a previous API request."""
     data = cache.get(f"curl/{request_id}")
     if data is None:
         return f"No cURL command found for request_id={request_id} (may have expired)."
@@ -89,40 +98,81 @@ def cached_curl_resource(request_id: str) -> str:
 # ── tool ───────────────────────────────────────────────────────────────────────
 
 
-@mcp.tool()
+@mcp.tool(
+    name="call_endpoint",
+    description=(
+        "[WalmartAds] Execute an authenticated Walmart Connect Ads API request. "
+        "Identify the endpoint by operation_id (discovered via list_endpoints / "
+        "describe_endpoint) or by raw method + path; raw method+path also reaches "
+        "alpha/beta/unpublished endpoints absent from the bundled specs. Bodies "
+        "over the configured byte threshold are truncated to a preview; read the "
+        "returned cached_at resource (wmc://responses/{request_id}) for full data. "
+        "The result also carries a curl reference (wmc://curl/{request_id}). "
+        "Display snapshot files require authenticated download — use "
+        "download_display_snapshot with the URL from the `details` field."
+    ),
+)
 async def call_endpoint(
-    region: str,
-    env: str,
-    ad_type: str,
-    method: str | None = None,
-    path: str | None = None,
-    operation_id: str | None = None,
-    params: dict[str, Any] | None = None,
-    body: dict[str, Any] | list[Any] | None = None,
+    region: Annotated[
+        str,
+        Field(description="[WalmartAds] API region, e.g. US. Src: config."),
+    ],
+    env: Annotated[
+        str,
+        Field(description="[WalmartAds] Target environment — production or staging. Src: config."),
+    ],
+    ad_type: Annotated[
+        str,
+        Field(description="[WalmartAds] API family — search or display. Src: config."),
+    ],
+    method: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[WalmartAds] HTTP method — GET, POST, PUT, PATCH, or DELETE. "
+                "Required unless operation_id is given."
+            ),
+        ),
+    ] = None,
+    path: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[WalmartAds] API path after base URL, e.g. /api/v1/campaigns. "
+                "Required unless operation_id is given."
+            ),
+        ),
+    ] = None,
+    operation_id: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[WalmartAds] Spec operation id (e.g. AdGroupList). Resolves "
+                "method+path from the ad_type spec. Src: operations."
+            ),
+        ),
+    ] = None,
+    params: Annotated[
+        dict[str, Any] | None,
+        Field(
+            default=None,
+            description="[WalmartAds] Query string parameters as a JSON object.",
+        ),
+    ] = None,
+    body: Annotated[
+        dict[str, Any] | list[Any] | None,
+        Field(
+            default=None,
+            description=(
+                "[WalmartAds] JSON request body for POST/PUT "
+                "(object or array when the API requires it)."
+            ),
+        ),
+    ] = None,
 ) -> ApiToolResult:
-    r"""[WalmartAds] Execute authenticated Walmart Connect Ads API request.
-
-    Specify the endpoint either by ``operation_id`` (discovered via
-    list_endpoints / describe_endpoint) or by raw
-    ``method`` + ``path``. Raw method+path also reaches alpha/beta/unpublished
-    endpoints that are not in the bundled specs.
-
-    Args:
-        region: API region, e.g. US. Src: config.
-        env: Target environment — production or staging. Src: config.
-        ad_type: API family — search or display. Src: config.
-        method: HTTP method — GET, POST, PUT, PATCH, or DELETE. Required unless
-            operation_id is given.
-        path: API path after base URL, e.g. /api/v1/campaigns. Required unless
-            operation_id is given.
-        operation_id: Spec operation id (e.g. AdGroupList). Resolves method+path
-            from the ad_type spec. Src: operations.
-        params: Query string parameters as a JSON object.
-        body: JSON request body for POST/PUT (object or array when the API requires it).
-
-    Display snapshot files require authenticated download — use
-    download_display_snapshot with the URL from the `details` field.
-    """
     region_upper = region.upper()
     env_lower = env.lower()
 
@@ -193,25 +243,33 @@ async def call_endpoint(
 _DISPLAY_SNAPSHOT_URL = "https://advertising.walmart.com/display/file/{snapshot_id}"
 
 
-@mcp.tool()
+@mcp.tool(
+    name="download_display_snapshot",
+    description=(
+        "[WalmartAds] Download a display snapshot file (report or entity). Display "
+        "snapshot download URLs require authenticated requests with Walmart API "
+        "headers. Use with the URL from the `details` field after polling a display "
+        "snapshot to `done` status."
+    ),
+)
 async def download_display_snapshot(
-    region: str,
-    env: str,
-    snapshot_id: str,
-    advertiser_id: int,
+    region: Annotated[
+        str,
+        Field(description="[WalmartAds] API region, e.g. US. Src: config."),
+    ],
+    env: Annotated[
+        str,
+        Field(description="[WalmartAds] Target environment — production or staging. Src: config."),
+    ],
+    snapshot_id: Annotated[
+        str,
+        Field(description="[WalmartAds] The snapshot ID from the `details` URL (e.g. `1a`)."),
+    ],
+    advertiser_id: Annotated[
+        int,
+        Field(description="[WalmartAds] The advertiser ID used when creating the snapshot."),
+    ],
 ) -> DownloadToolResult:
-    r"""[WalmartAds] Download a display snapshot file (report or entity).
-
-    Display snapshot download URLs require authenticated requests with Walmart
-    API headers. Use this tool with the URL from the ``details`` field after
-    polling a display snapshot to ``done`` status.
-
-    Args:
-        region: API region, e.g. US. Src: config.
-        env: Target environment — production or staging. Src: config.
-        snapshot_id: The snapshot ID from the ``details`` URL (e.g. ``1a``).
-        advertiser_id: The advertiser ID used when creating the snapshot.
-    """
     region_upper = region.upper()
     env_lower = env.lower()
 
@@ -249,21 +307,39 @@ async def download_display_snapshot(
 # ── discovery + refresh tools ────────────────────────────────────────────────
 
 
-@mcp.tool()
+@mcp.tool(
+    name="list_endpoints",
+    description="[WalmartAds] List OpenAPI operations for an ad_type with optional filters.",
+)
 async def list_endpoints(
-    ad_type: str,
-    query: str | None = None,
-    tag: str | None = None,
-    method: str | None = None,
+    ad_type: Annotated[
+        str,
+        Field(description="[WalmartAds] API family — search or display. Src: config."),
+    ],
+    query: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[WalmartAds] Case-insensitive substring match on operationId, path, or summary."
+            ),
+        ),
+    ] = None,
+    tag: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="[WalmartAds] Filter to operations whose OpenAPI tags include this value.",
+        ),
+    ] = None,
+    method: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="[WalmartAds] Filter by HTTP verb — GET, POST, PUT, PATCH, or DELETE.",
+        ),
+    ] = None,
 ) -> dict[str, Any]:
-    r"""[WalmartAds] List OpenAPI operations for an ad_type with optional filters.
-
-    Args:
-        ad_type: API family — search or display. Src: config.
-        query: Case-insensitive substring match on operationId, path, or summary.
-        tag: Filter to operations whose OpenAPI tags include this value.
-        method: Filter by HTTP verb — GET, POST, PUT, PATCH, or DELETE.
-    """
     try:
         endpoints = discovery.list_endpoints(ad_type.lower(), query=query, tag=tag, method=method)
     except SpecError as e:
@@ -271,34 +347,51 @@ async def list_endpoints(
     return {"ad_type": ad_type.lower(), "count": len(endpoints), "endpoints": endpoints}
 
 
-@mcp.tool()
-async def describe_endpoint(ad_type: str, operation_id: str) -> dict[str, Any]:
-    r"""[WalmartAds] Describe one OpenAPI operation with its schema closure.
-
-    Returns the operation plus every ``components.schemas`` entry reachable from
-    it, so request bodies and responses can be built without the full spec.
-
-    Args:
-        ad_type: API family — search or display. Src: config.
-        operation_id: Spec operation id. Src: operations.
-    """
+@mcp.tool(
+    name="describe_endpoint",
+    description=(
+        "[WalmartAds] Describe one OpenAPI operation with its schema closure. "
+        "Returns the operation plus every components.schemas entry reachable from "
+        "it, so request bodies and responses can be built without the full spec."
+    ),
+)
+async def describe_endpoint(
+    ad_type: Annotated[
+        str,
+        Field(description="[WalmartAds] API family — search or display. Src: config."),
+    ],
+    operation_id: Annotated[
+        str,
+        Field(description="[WalmartAds] Spec operation id. Src: operations."),
+    ],
+) -> dict[str, Any]:
     try:
         return discovery.describe_endpoint(ad_type.lower(), operation_id)
     except SpecError as e:
         return {"error": str(e)}
 
 
-@mcp.tool()
-async def refresh_specs(spec_id: str | None = None) -> dict[str, Any]:
-    r"""[WalmartAds] Refresh bundled OpenAPI specs from ReadMe's public registry.
-
-    Re-fetches the latest spec JSON into a user cache that takes precedence over
-    the bundled copy. Omit spec_id to refresh all specs.
-
-    Args:
-        spec_id: One of search/sponsored-products, display/display-rest-api,
-            display/ad-id-token-generation, display/conversion-rest-api. Src: specs.
-    """
+@mcp.tool(
+    name="refresh_specs",
+    description=(
+        "[WalmartAds] Refresh bundled OpenAPI specs from ReadMe's public registry. "
+        "Re-fetches the latest spec JSON into a user cache that takes precedence "
+        "over the bundled copy. Omit spec_id to refresh all specs."
+    ),
+)
+async def refresh_specs(
+    spec_id: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[WalmartAds] One of search/sponsored-products, "
+                "display/display-rest-api, display/ad-id-token-generation, "
+                "display/conversion-rest-api. Src: specs."
+            ),
+        ),
+    ] = None,
+) -> dict[str, Any]:
     try:
         results = await specs.refresh(spec_id)
     except SpecError as e:
