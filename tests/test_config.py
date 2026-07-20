@@ -7,7 +7,28 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from mcp_walmart_ads.config import load_config
+from mcp_walmart_ads.config import CaseInsensitiveDict, load_config
+
+
+def test_case_insensitive_dict() -> None:
+    d: CaseInsensitiveDict[int] = CaseInsensitiveDict({"US": 1})
+    d["Mx"] = 2
+
+    assert d["us"] == 1 and d["US"] == 1
+    assert d["mx"] == 2 and d["MX"] == 2
+    assert "us" in d and "MX" in d and "ca" not in d
+    assert d.get("us") == 1
+    assert d.get("ca") is None
+    assert d.get("ca", 0) == 0
+    # Original casing is preserved for display/iteration.
+    assert list(d.keys()) == ["US", "Mx"]
+
+    # Mutators route through the case-insensitive machinery too.
+    d.update({"ca": 3})
+    assert d["CA"] == 3
+    assert d.pop("US") == 1 and "us" not in d
+    del d["mx"]
+    assert list(d.keys()) == ["ca"]
 
 
 def _make_pem(tmp_dir: Path) -> Path:
@@ -83,6 +104,57 @@ def test_relative_key_path(tmp_path: Path) -> None:
     cfg_file = _write_config(tmp_path, cfg_data)
     cfg = load_config(cfg_file)
     assert cfg.regions["US"]["staging"].private_key_pem.startswith("-----BEGIN")
+
+
+def _config_with_keys(tmp_path: Path, region: str, env: str) -> Path:
+    key_file = _make_pem(tmp_path)
+    cfg_data = {
+        "regions": {
+            region: {
+                env: {
+                    "consumer_id": "id",
+                    "private_key": str(key_file),
+                    "bearer_token": "tok",
+                    "base_urls": {
+                        "search": "https://s.example.com",
+                        "display": "https://d.example.com",
+                    },
+                }
+            }
+        }
+    }
+    return _write_config(tmp_path, cfg_data)
+
+
+@pytest.mark.parametrize("stored_region", ["us", "US"])
+@pytest.mark.parametrize("lookup_region", ["us", "US"])
+@pytest.mark.parametrize("stored_env", ["staging", "Staging"])
+@pytest.mark.parametrize("lookup_env", ["staging", "STAGING"])
+def test_region_and_env_lookup_case_insensitive(
+    tmp_path: Path,
+    stored_region: str,
+    lookup_region: str,
+    stored_env: str,
+    lookup_env: str,
+) -> None:
+    cfg = load_config(_config_with_keys(tmp_path, stored_region, stored_env))
+    assert lookup_region in cfg.regions
+    region_envs = cfg.regions[lookup_region]
+    assert lookup_env in region_envs
+    assert region_envs[lookup_env].consumer_id == "id"
+
+
+def test_lookup_preserves_original_key_casing(tmp_path: Path) -> None:
+    cfg = load_config(_config_with_keys(tmp_path, "us", "Staging"))
+    # Iteration/keys() must report keys exactly as written, not normalized.
+    assert list(cfg.regions.keys()) == ["us"]
+    assert list(cfg.regions["US"].keys()) == ["Staging"]
+
+
+def test_missing_region_lookup(tmp_path: Path) -> None:
+    cfg = load_config(_config_with_keys(tmp_path, "us", "staging"))
+    assert "ca" not in cfg.regions
+    assert cfg.regions.get("ca") is None
 
 
 def test_missing_config_file_raises() -> None:
