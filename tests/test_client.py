@@ -55,6 +55,20 @@ def test_build_headers_correlation_id_is_uuid() -> None:
     assert re.match(uuid_pattern, headers["WM_QOS.CORRELATION_ID"])
 
 
+def test_build_headers_omits_advertiser_and_tenant_by_default() -> None:
+    cfg = _make_env_cfg()
+    headers = _build_headers(cfg)
+    assert "X-Advertiser-ID" not in headers
+    assert "wap-tenant-id" not in headers
+
+
+def test_build_headers_includes_advertiser_and_tenant_when_passed() -> None:
+    cfg = _make_env_cfg()
+    headers = _build_headers(cfg, advertiser_id=600001, tenant="WMT_CA")
+    assert headers["X-Advertiser-ID"] == "600001"
+    assert headers["wap-tenant-id"] == "WMT_CA"
+
+
 @pytest.mark.asyncio
 async def test_execute_request_builds_correct_url() -> None:
     from mcp_walmart_ads.client import execute_request
@@ -89,6 +103,39 @@ async def test_execute_request_builds_correct_url() -> None:
     assert call_kwargs.kwargs["method"] == "GET"
     assert "curl -X GET" in result.curl
     assert "WM_SEC.AUTH_SIGNATURE" in result.curl
+    headers = call_kwargs.kwargs["headers"]
+    assert "X-Advertiser-ID" not in headers
+    assert "wap-tenant-id" not in headers
+
+
+@pytest.mark.asyncio
+async def test_execute_request_forwards_advertiser_and_tenant_headers() -> None:
+    from mcp_walmart_ads.client import execute_request
+
+    cfg = _make_env_cfg()
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"ok": True}
+    mock_response.status_code = 200
+    mock_response.request.url = "https://search.example.com/api/v1/api/v1/campaigns"
+
+    with patch("mcp_walmart_ads.client.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.request = AsyncMock(return_value=mock_response)
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        await execute_request(
+            cfg=cfg,
+            ad_type="search",
+            method="GET",
+            path="/api/v1/campaigns",
+            advertiser_id=600001,
+            tenant="WMT_CA",
+        )
+
+    headers = mock_client.request.call_args.kwargs["headers"]
+    assert headers["X-Advertiser-ID"] == "600001"
+    assert headers["wap-tenant-id"] == "WMT_CA"
 
 
 @pytest.mark.asyncio
@@ -119,3 +166,31 @@ async def test_download_file_uses_full_url_with_auth_headers() -> None:
     assert "WM_SEC.AUTH_SIGNATURE" in headers
     assert "Authorization" in headers
     assert "Content-Type" not in headers
+    assert "X-Advertiser-ID" not in headers
+    assert "wap-tenant-id" not in headers
+
+
+@pytest.mark.asyncio
+async def test_download_file_forwards_advertiser_and_tenant_headers() -> None:
+    cfg = _make_env_cfg()
+    mock_response = MagicMock()
+    mock_response.content = b"data"
+    mock_response.status_code = 200
+
+    with patch("mcp_walmart_ads.client.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        await download_file(
+            cfg=cfg,
+            url="https://advertising.walmart.com/display/file/abc-123",
+            params={"advertiserId": 600001},
+            advertiser_id=600001,
+            tenant="WMT_MX",
+        )
+
+    headers = mock_client.get.call_args.kwargs["headers"]
+    assert headers["X-Advertiser-ID"] == "600001"
+    assert headers["wap-tenant-id"] == "WMT_MX"

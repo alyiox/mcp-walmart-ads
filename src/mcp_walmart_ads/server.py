@@ -172,6 +172,26 @@ async def call_endpoint(
             ),
         ),
     ] = None,
+    advertiser_id: Annotated[
+        int | None,
+        Field(
+            default=None,
+            description=(
+                "[WalmartAds] Required by many display/creative/campaign endpoints. "
+                "Sent as X-Advertiser-ID."
+            ),
+        ),
+    ] = None,
+    tenant: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[WalmartAds] WAP tenant for non-US, e.g. WMT_CA, WMT_MX, WBD_OD. "
+                "Omit for US. Sent as wap-tenant-id."
+            ),
+        ),
+    ] = None,
 ) -> ApiToolResult:
     if region not in config.regions:
         available = ", ".join(config.regions.keys())
@@ -210,6 +230,8 @@ async def call_endpoint(
         path=path,
         params=params,
         body=body,
+        advertiser_id=advertiser_id,
+        tenant=tenant,
     )
 
     cache.put(f"curl/{response.request_id}", response.curl)
@@ -238,16 +260,13 @@ async def call_endpoint(
     )
 
 
-_DISPLAY_SNAPSHOT_URL = "https://advertising.walmart.com/display/file/{snapshot_id}"
-
-
 @mcp.tool(
     name="download_display_snapshot",
     description=(
         "[WalmartAds] Download a display snapshot file (report or entity). Display "
         "snapshot download URLs require authenticated requests with Walmart API "
-        "headers. Use with the URL from the `details` field after polling a display "
-        "snapshot to `done` status."
+        "headers. Use with the full URL from the `details` field after polling a "
+        "display snapshot to `done` status."
     ),
 )
 async def download_display_snapshot(
@@ -259,14 +278,26 @@ async def download_display_snapshot(
         str,
         Field(description="[WalmartAds] Target environment — production or staging. Src: config."),
     ],
-    snapshot_id: Annotated[
+    download_url: Annotated[
         str,
-        Field(description="[WalmartAds] The snapshot ID from the `details` URL (e.g. `1a`)."),
+        Field(
+            description=("[WalmartAds] Full download URL from the snapshot poll `details` field."),
+        ),
     ],
     advertiser_id: Annotated[
         int,
         Field(description="[WalmartAds] The advertiser ID used when creating the snapshot."),
     ],
+    tenant: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[WalmartAds] WAP tenant for non-US, e.g. WMT_CA, WMT_MX, WBD_OD. "
+                "Omit for US. Sent as wap-tenant-id."
+            ),
+        ),
+    ] = None,
 ) -> DownloadToolResult:
     if region not in config.regions:
         available = ", ".join(config.regions.keys())
@@ -280,9 +311,14 @@ async def download_display_snapshot(
         return DownloadToolResult(error=msg)
 
     env_cfg = region_envs[env]
-    url = _DISPLAY_SNAPSHOT_URL.format(snapshot_id=snapshot_id)
 
-    response = await download_file(cfg=env_cfg, url=url, params={"advertiserId": advertiser_id})
+    response = await download_file(
+        cfg=env_cfg,
+        url=download_url,
+        params={"advertiserId": advertiser_id},
+        advertiser_id=advertiser_id,
+        tenant=tenant,
+    )
 
     if response.status_code != 200:
         return DownloadToolResult(status_code=response.status_code, error="Download failed.")

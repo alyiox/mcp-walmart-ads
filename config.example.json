@@ -23,6 +23,28 @@
           "display": "https://developer.api.us.stg.walmart.com/api-proxy/service/display/api/v1"
         }
       }
+    },
+    "CA": {
+      "production": {
+        "consumer_id": "your-ca-consumer-id",
+        "private_key": "./keys/ca/prod.pem",
+        "private_key_version": "1",
+        "bearer_token": "your-ca-bearer-token",
+        "base_urls": {
+          "search": "https://developer.api.walmart.com/api-proxy/service/WPA/Api/v1",
+          "display": "https://developer.api.walmart.com/api-proxy/service/display/api/v1"
+        }
+      },
+      "staging": {
+        "consumer_id": "your-ca-staging-consumer-id",
+        "private_key": "./keys/ca/staging.pem",
+        "private_key_version": "1",
+        "bearer_token": "your-ca-staging-bearer-token",
+        "base_urls": {
+          "search": "https://developer.api.stg.walmart.com/api-proxy/service/WPA/Api/v1",
+          "display": "https://developer.api.us.stg.walmart.com/api-proxy/service/display/api/v1"
+        }
+      }
     }
   }
 }

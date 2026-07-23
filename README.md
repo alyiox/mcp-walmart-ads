@@ -101,6 +101,8 @@ Copy-Item config.example.json "$env:USERPROFILE\.config\mcp-walmart-ads\config.j
 
 Key paths in the config are resolved relative to the config directory, so `./keys/us/prod.pem` resolves to `~/.config/mcp-walmart-ads/keys/us/prod.pem`.
 
+`config.example.json` also includes a `CA` region that uses the same API hosts as `US`. Select the WAP market with the per-call `tenant` parameter (see below), not via different base URLs.
+
 | Config field | Description |
 |---|---|
 | `response_cache_ttl` | Seconds to keep truncated responses in memory (default `3600`) |
@@ -111,6 +113,16 @@ Key paths in the config are resolved relative to the config directory, so `./key
 | `regions.<R>.<E>.bearer_token` | OAuth bearer token |
 | `regions.<R>.<E>.base_urls.search` | Sponsored Search API base URL |
 | `regions.<R>.<E>.base_urls.display` | Display API base URL |
+
+### Market → tenant (`wap-tenant-id`)
+
+Pass `tenant` on `call_endpoint` / `download_display_snapshot` for non-US WAP markets. Omit for US.
+
+| Market | `tenant` value |
+|---|---|
+| US | *(omit)* |
+| CA | `WMT_CA` |
+| MX | `WMT_MX`, `WBD_OD`, or `WMT_BD` |
 
 ## Tools
 
@@ -148,6 +160,8 @@ Execute any Walmart Connect Ads API endpoint. Identify it by `operation_id`, or 
 | `path` | no* | e.g. `/api/v1/campaigns` |
 | `params` | no | Query string parameters (JSON object) |
 | `body` | no | JSON request body for POST/PUT (object or array) |
+| `advertiser_id` | no | Sent as `X-Advertiser-ID`; required by many display/creative/campaign endpoints |
+| `tenant` | no | Sent as `wap-tenant-id` for non-US WAP (e.g. `WMT_CA`); omit for US |
 
 \* Provide either `operation_id`, or both `method` and `path`.
 
@@ -161,14 +175,15 @@ Re-fetch the bundled OpenAPI specs from ReadMe's public api-registry into a user
 
 ### `download_display_snapshot`
 
-Download a display snapshot file (report or entity). Display snapshot URLs require authenticated requests, so this tool handles the signing automatically. Use it with the snapshot ID from the `details` field after polling a display snapshot to `done` status.
+Download a display snapshot file (report or entity). Display snapshot URLs require authenticated requests, so this tool handles the signing automatically. Use the full download URL from the `details` field after polling a display snapshot to `done` status.
 
 | Parameter | Required | Description |
 |---|---|---|
-| `region` | yes | e.g. `US` |
+| `region` | yes | e.g. `US` or `CA` |
 | `env` | yes | `production` or `staging` |
-| `snapshot_id` | yes | Snapshot ID from the `details` URL |
+| `download_url` | yes | Full URL from the snapshot poll `details` field |
 | `advertiser_id` | yes | Advertiser ID used when creating the snapshot |
+| `tenant` | no | Sent as `wap-tenant-id` for non-US WAP; omit for US |
 
 ## MCP resources
 

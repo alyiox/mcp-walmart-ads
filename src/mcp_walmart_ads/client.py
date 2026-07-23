@@ -26,9 +26,14 @@ class DownloadResponse:
     request_id: str
 
 
-def _build_headers(cfg: EnvConfig) -> dict[str, str]:
+def _build_headers(
+    cfg: EnvConfig,
+    *,
+    advertiser_id: int | None = None,
+    tenant: str | None = None,
+) -> dict[str, str]:
     sig = generate_signature(cfg.consumer_id, cfg.private_key_pem, cfg.private_key_version)
-    return {
+    headers = {
         "WM_CONSUMER.ID": cfg.consumer_id,
         "WM_CONSUMER.INTIMESTAMP": sig.timestamp,
         "WM_SEC.KEY_VERSION": sig.key_version,
@@ -38,6 +43,11 @@ def _build_headers(cfg: EnvConfig) -> dict[str, str]:
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
+    if advertiser_id is not None:
+        headers["X-Advertiser-ID"] = str(advertiser_id)
+    if tenant:
+        headers["wap-tenant-id"] = tenant
+    return headers
 
 
 def build_curl(
@@ -61,10 +71,12 @@ async def execute_request(
     path: str,
     params: dict[str, Any] | None = None,
     body: dict[str, Any] | list[Any] | None = None,
+    advertiser_id: int | None = None,
+    tenant: str | None = None,
 ) -> ApiResponse:
     base_url = cfg.base_urls[ad_type].rstrip("/")
     url = base_url + path
-    headers = _build_headers(cfg)
+    headers = _build_headers(cfg, advertiser_id=advertiser_id, tenant=tenant)
     request_id = str(uuid.uuid4())
 
     async with httpx.AsyncClient() as client:
@@ -99,9 +111,11 @@ async def download_file(
     cfg: EnvConfig,
     url: str,
     params: dict[str, Any] | None = None,
+    advertiser_id: int | None = None,
+    tenant: str | None = None,
 ) -> DownloadResponse:
     """Download a file from an authenticated Walmart endpoint (e.g. display snapshot)."""
-    headers = _build_headers(cfg)
+    headers = _build_headers(cfg, advertiser_id=advertiser_id, tenant=tenant)
     headers.pop("Content-Type", None)
     headers["Accept"] = "*/*"
     request_id = str(uuid.uuid4())
