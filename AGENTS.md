@@ -100,6 +100,6 @@ Assisted-by: Claude:claude-opus-4-6 coccinelle sparse
 
 Normative, high-density metadata: enough for correct tool and parameter selection, minimal to reduce token cost.
 
-* **The tool/parameter description MUST start with [ClickHouse], followed by a Verb-Object fragment**, e.g. `[ClickHouse] Execute read-only SQL`, `[ClickHouse] List databases`, `[ClickHouse] Describe table`.
-* **Use tag-based lineage (Src: <Entity>) for parameters that refer to ClickHouse entities** (e.g. database name → Src: databases, table name → Src: tables).
+* **The tool/parameter description MUST start with [WalmartAds], followed by a Verb-Object fragment**, e.g. `[WalmartAds] Execute an authenticated API request`, `[WalmartAds] List OpenAPI operations`, `[WalmartAds] Describe one OpenAPI operation`.
+* **Use tag-based lineage (Src: <Entity>) for parameters that refer to Walmart Ads MCP entities** (e.g. region/env → Src: config, operation id → Src: operations, spec id → Src: specs).
 
