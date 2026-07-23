@@ -4,11 +4,15 @@ import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
 from .auth import generate_signature
 from .config import EnvConfig
+
+_MAX_REDIRECTS = 5
+_REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
 
 
 @dataclass(frozen=True)
@@ -24,6 +28,7 @@ class DownloadResponse:
     status_code: int
     content: bytes
     request_id: str
+    urls: str
 
 
 def _build_headers(
@@ -107,6 +112,22 @@ async def execute_request(
     )
 
 
+def _headers_for_redirect(
+    init_headers: dict[str, str],
+    *,
+    location: str,
+    current_url: str,
+    next_url: str,
+) -> dict[str, str]:
+    """Relative Location or same host → init headers; cross-host → drop Authorization."""
+    parsed_location = urlparse(location)
+    if not parsed_location.scheme and not parsed_location.netloc:
+        return init_headers
+    if urlparse(next_url).netloc.casefold() == urlparse(current_url).netloc.casefold():
+        return init_headers
+    return {k: v for k, v in init_headers.items() if k.lower() != "authorization"}
+
+
 async def download_file(
     cfg: EnvConfig,
     url: str,
@@ -115,16 +136,50 @@ async def download_file(
     tenant: str | None = None,
 ) -> DownloadResponse:
     """Download a file from an authenticated Walmart endpoint (e.g. display snapshot)."""
-    headers = _build_headers(cfg, advertiser_id=advertiser_id, tenant=tenant)
-    headers.pop("Content-Type", None)
-    headers["Accept"] = "*/*"
+    init_headers = _build_headers(cfg, advertiser_id=advertiser_id, tenant=tenant)
+    init_headers.pop("Content-Type", None)
+    init_headers["Accept"] = "*/*"
     request_id = str(uuid.uuid4())
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers, params=params, timeout=120.0)
+    hops: list[str] = []
+    current_url = url
+    request_params = params
+    hop_headers = init_headers
+    redirects_followed = 0
+
+    async with httpx.AsyncClient(follow_redirects=False) as client:
+        while True:
+            response = await client.get(
+                current_url,
+                headers=hop_headers,
+                params=request_params,
+                timeout=120.0,
+            )
+            hops.append(str(response.request.url))
+            request_params = None
+
+            if response.status_code not in _REDIRECT_STATUS:
+                break
+            if redirects_followed >= _MAX_REDIRECTS:
+                break
+
+            location = response.headers.get("Location")
+            if not location:
+                break
+
+            next_url = urljoin(str(response.url), location)
+            hop_headers = _headers_for_redirect(
+                init_headers,
+                location=location,
+                current_url=str(response.request.url),
+                next_url=next_url,
+            )
+            current_url = next_url
+            redirects_followed += 1
 
     return DownloadResponse(
         status_code=response.status_code,
         content=response.content,
         request_id=request_id,
+        urls=",".join(hops),
     )

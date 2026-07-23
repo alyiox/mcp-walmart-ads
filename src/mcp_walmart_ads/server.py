@@ -51,6 +51,7 @@ class DownloadToolResult(_ExcludeNone):
     status_code: int | None = None
     size_bytes: int | None = None
     cached_at: str | None = None  # wmc://responses/{request_id}
+    urls: str | None = None  # comma-separated hop URLs (start → … → last)
     error: str | None = None
 
 
@@ -263,10 +264,10 @@ async def call_endpoint(
 @mcp.tool(
     name="download_display_snapshot",
     description=(
-        "[WalmartAds] Download a display snapshot file (report or entity). Display "
-        "snapshot download URLs require authenticated requests with Walmart API "
-        "headers. Use with the full URL from the `details` field after polling a "
-        "display snapshot to `done` status."
+        "[WalmartAds] Download a search or display snapshot file (report or entity) "
+        "from the poll `details` URL. Follows HTTP redirects (relative Location keeps "
+        "init auth headers; cross-host drops Bearer). Result includes `urls` "
+        "(comma-separated hop path). Requires authenticated Walmart API headers."
     ),
 )
 async def download_display_snapshot(
@@ -321,7 +322,12 @@ async def download_display_snapshot(
     )
 
     if response.status_code != 200:
-        return DownloadToolResult(status_code=response.status_code, error="Download failed.")
+        last_url = response.urls.rsplit(",", 1)[-1]
+        return DownloadToolResult(
+            status_code=response.status_code,
+            urls=response.urls,
+            error=f"Download failed: HTTP {response.status_code} at {last_url}",
+        )
 
     try:
         text = gzip.decompress(response.content).decode()
@@ -333,6 +339,7 @@ async def download_display_snapshot(
         status_code=response.status_code,
         size_bytes=len(text.encode()),
         cached_at=f"wmc://responses/{response.request_id}",
+        urls=response.urls,
     )
 
 

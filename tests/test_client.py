@@ -144,6 +144,10 @@ async def test_download_file_uses_full_url_with_auth_headers() -> None:
     mock_response = MagicMock()
     mock_response.content = b"\x1f\x8b fake gzip"
     mock_response.status_code = 200
+    mock_response.request.url = (
+        "https://advertising.walmart.com/display/file/abc-123?advertiserId=600001"
+    )
+    mock_response.headers = {}
 
     with patch("mcp_walmart_ads.client.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
@@ -159,6 +163,7 @@ async def test_download_file_uses_full_url_with_auth_headers() -> None:
 
     assert result.status_code == 200
     assert result.content == b"\x1f\x8b fake gzip"
+    assert result.urls == "https://advertising.walmart.com/display/file/abc-123?advertiserId=600001"
     call_kwargs = mock_client.get.call_args
     assert call_kwargs.args[0] == "https://advertising.walmart.com/display/file/abc-123"
     assert call_kwargs.kwargs["params"] == {"advertiserId": 600001}
@@ -176,6 +181,8 @@ async def test_download_file_forwards_advertiser_and_tenant_headers() -> None:
     mock_response = MagicMock()
     mock_response.content = b"data"
     mock_response.status_code = 200
+    mock_response.request.url = "https://advertising.walmart.com/display/file/abc-123"
+    mock_response.headers = {}
 
     with patch("mcp_walmart_ads.client.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
@@ -194,3 +201,85 @@ async def test_download_file_forwards_advertiser_and_tenant_headers() -> None:
     headers = mock_client.get.call_args.kwargs["headers"]
     assert headers["X-Advertiser-ID"] == "600001"
     assert headers["wap-tenant-id"] == "WMT_MX"
+
+
+@pytest.mark.asyncio
+async def test_download_file_follows_relative_redirect_keeping_init_headers() -> None:
+    cfg = _make_env_cfg()
+    start = "https://advertising.walmart.com/mx/file/abc-123"
+    final = "https://advertising.walmart.com/mx/sp/api/file/abc-123"
+
+    redirect = MagicMock()
+    redirect.status_code = 301
+    redirect.content = b""
+    redirect.headers = {"Location": "/mx/sp/api/file/abc-123"}
+    redirect.url = start
+    redirect.request.url = start
+
+    ok = MagicMock()
+    ok.status_code = 200
+    ok.content = b'"adSpend","date"\n'
+    ok.headers = {}
+    ok.request.url = final
+
+    with patch("mcp_walmart_ads.client.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[redirect, ok])
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        result = await download_file(
+            cfg=cfg,
+            url=start,
+            advertiser_id=600001,
+            tenant="WMT_MX",
+        )
+
+    assert result.status_code == 200
+    assert result.content == b'"adSpend","date"\n'
+    assert result.urls == f"{start},{final}"
+    assert mock_client.get.call_count == 2
+
+    first_headers = mock_client.get.call_args_list[0].kwargs["headers"]
+    second_headers = mock_client.get.call_args_list[1].kwargs["headers"]
+    assert second_headers is first_headers
+    assert second_headers["Authorization"] == "Bearer test-token"
+    assert second_headers["wap-tenant-id"] == "WMT_MX"
+    assert mock_client.get.call_args_list[0].kwargs["params"] is None
+    assert mock_client.get.call_args_list[1].args[0] == final
+    assert mock_client.get.call_args_list[1].kwargs["params"] is None
+
+
+@pytest.mark.asyncio
+async def test_download_file_strips_authorization_on_cross_host_redirect() -> None:
+    cfg = _make_env_cfg()
+    start = "https://advertising.walmart.com/mx/file/abc-123"
+    final = "https://cdn.example.com/files/abc-123"
+
+    redirect = MagicMock()
+    redirect.status_code = 302
+    redirect.content = b""
+    redirect.headers = {"Location": final}
+    redirect.url = start
+    redirect.request.url = start
+
+    ok = MagicMock()
+    ok.status_code = 200
+    ok.content = b"payload"
+    ok.headers = {}
+    ok.request.url = final
+
+    with patch("mcp_walmart_ads.client.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[redirect, ok])
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        result = await download_file(cfg=cfg, url=start, tenant="WMT_MX")
+
+    assert result.status_code == 200
+    assert result.urls == f"{start},{final}"
+    second_headers = mock_client.get.call_args_list[1].kwargs["headers"]
+    assert "Authorization" not in second_headers
+    assert "WM_SEC.AUTH_SIGNATURE" in second_headers
+    assert second_headers["wap-tenant-id"] == "WMT_MX"
