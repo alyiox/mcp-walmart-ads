@@ -102,4 +102,12 @@ Normative, high-density metadata: enough for correct tool and parameter selectio
 
 * **The tool/parameter description MUST start with [WalmartAds], followed by a Verb-Object fragment**, e.g. `[WalmartAds] Execute an authenticated API request`, `[WalmartAds] List OpenAPI operations`, `[WalmartAds] Describe one OpenAPI operation`.
 * **Use tag-based lineage (Src: <Entity>) for parameters that refer to Walmart Ads MCP entities** (e.g. region/env → Src: config, operation id → Src: operations, spec id → Src: specs).
+* **Every tool MUST declare `ToolAnnotations`**, mapped from the operation it performs:
+  * Read → `readOnlyHint=True`
+  * Create → `readOnlyHint=False`, `destructiveHint=False`, `idempotentHint=False`
+  * Update → `readOnlyHint=False`, `destructiveHint=False`, `idempotentHint=True`
+  * Delete → `readOnlyHint=False`, `destructiveHint=True`
+  * A passthrough tool that can perform any of the above takes the most cautious shape (`destructiveHint=True`, `idempotentHint=False`)
+  * Set `openWorldHint=True` when the tool reaches the network, `False` when it only reads bundled specs or config
+  * Omit `destructiveHint`/`idempotentHint` on read-only tools — they are meaningful only when `readOnlyHint=False`
 
