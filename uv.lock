@@ -341,7 +341,7 @@ wheels = [
 
 [[package]]
 name = "mcp-walmart-ads"
-version = "0.1.1a3"
+version = "0.1.1a4"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
