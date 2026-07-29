@@ -4,7 +4,7 @@ import gzip
 import json
 from typing import Annotated, Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, model_serializer
 
@@ -17,7 +17,7 @@ from .specs import SpecError
 config = load_config()
 cache = ResponseCache(ttl_seconds=config.response_cache_ttl)
 
-mcp = FastMCP(
+mcp = MCPServer(
     "Walmart Connect Ads",
     instructions=(
         "MCP server for Walmart Connect Ads APIs. "
@@ -116,10 +116,10 @@ def cached_curl_resource(request_id: str) -> str:
     # Passthrough to any spec operation — the caller picks the verb, so assume
     # the most cautious shape: writes, may delete, retries are not safe.
     annotations=ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=True,
-        idempotentHint=False,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=True,
     ),
 )
 async def call_endpoint(
@@ -278,7 +278,7 @@ async def call_endpoint(
         "init auth headers; cross-host drops Bearer). Result includes `urls` "
         "(comma-separated hop path). Requires authenticated Walmart API headers."
     ),
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
 )
 async def download_display_snapshot(
     region: Annotated[
@@ -359,7 +359,7 @@ async def download_display_snapshot(
 @mcp.tool(
     name="list_endpoints",
     description="[WalmartAds] List OpenAPI operations for an ad_type with optional filters.",
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
 async def list_endpoints(
     ad_type: Annotated[
@@ -404,7 +404,7 @@ async def list_endpoints(
         "Returns the operation plus every components.schemas entry reachable from "
         "it, so request bodies and responses can be built without the full spec."
     ),
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
 async def describe_endpoint(
     ad_type: Annotated[
@@ -432,10 +432,10 @@ async def describe_endpoint(
     # Writes the user spec cache: an update, not a delete — re-running it
     # against the same registry state converges on the same cache.
     annotations=ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
     ),
 )
 async def refresh_specs(
