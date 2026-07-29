@@ -273,9 +273,9 @@ async def call_endpoint(
 @mcp.tool(
     name="download_display_snapshot",
     description=(
-        "[WalmartAds] Download a search or display snapshot file (report or entity) "
-        "from the poll `details` URL. Follows HTTP redirects (relative Location keeps "
-        "init auth headers; cross-host drops Bearer). Result includes `urls` "
+        "[WalmartAds] Download a display snapshot file (report or entity) from the "
+        "poll `details` URL — display ad_type only. Follows HTTP redirects (relative "
+        "Location keeps init auth headers; cross-host drops Bearer). Result includes `urls` "
         "(comma-separated hop path). Requires authenticated Walmart API headers."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
