@@ -69,7 +69,7 @@ Copy-Item config.example.json "$env:USERPROFILE\.config\mcp-walmart-ads\config.j
 ```json
 {
   "response_cache_ttl": 3600,
-  "truncate_threshold": 51200,
+  "truncate_threshold": 1024,
   "regions": {
     "US": {
       "production": {
@@ -106,7 +106,7 @@ Key paths in the config are resolved relative to the config directory, so `./key
 | Config field | Description |
 |---|---|
 | `response_cache_ttl` | Seconds to keep truncated responses in memory (default `3600`) |
-| `truncate_threshold` | Response byte limit before truncation (default `51200`) |
+| `truncate_threshold` | Response byte limit before truncation (default `1024`) |
 | `regions.<R>.<E>.consumer_id` | Your Walmart Connect consumer ID |
 | `regions.<R>.<E>.private_key` | Path to RSA private key PEM (relative to config dir or absolute) |
 | `regions.<R>.<E>.private_key_version` | Key version string (default `"1"`) |

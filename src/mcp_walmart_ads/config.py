@@ -119,5 +119,5 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
     return Config(
         regions=regions,
         response_cache_ttl=int(raw.get("response_cache_ttl", 3600)),
-        truncate_threshold=int(raw.get("truncate_threshold", 51200)),
+        truncate_threshold=int(raw.get("truncate_threshold", 1024)),
     )
