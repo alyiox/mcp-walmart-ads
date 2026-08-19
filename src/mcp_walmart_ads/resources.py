@@ -32,7 +32,16 @@ class ResponseCache:
 
 
 def read_cached_response(request_id: str, cache: ResponseCache) -> str | None:
+    """Return the cached body as text, or ``None`` if missing/expired.
+
+    JSON bodies are re-serialized with indentation; string bodies (non-JSON
+    responses, and gzip-decompressed report downloads) are returned verbatim --
+    JSON-encoding them would hand back a quoted blob with escaped newlines
+    instead of the file.
+    """
     data = cache.get(request_id)
     if data is None:
         return None
-    return json.dumps(data, indent=2)
+    if isinstance(data, str):
+        return data
+    return json.dumps(data, indent=2, ensure_ascii=False)
