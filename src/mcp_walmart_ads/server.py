@@ -219,9 +219,7 @@ async def list_endpoints(
         str | None,
         Field(
             default=None,
-            description=(
-                "[Walmart] Case-insensitive substring match on operation id, path, or summary."
-            ),
+            description=("Case-insensitive substring match on operation id, path, or summary."),
         ),
     ] = None,
     api: Annotated[
@@ -229,7 +227,7 @@ async def list_endpoints(
         Field(
             default=None,
             description=(
-                "[Walmart] Limit to one api, e.g. walmart:marketplace:order-management. "
+                "Limit to one api, e.g. walmart:marketplace:order-management. "
                 "A platform prefix is not accepted here — use platform for that. Src: apis."
             ),
         ),
@@ -238,19 +236,19 @@ async def list_endpoints(
         PlatformId | None,
         Field(
             default=None,
-            description="[Walmart] Limit to one platform. Src: apis.",
+            description="Limit to one platform. Src: apis.",
         ),
     ] = None,
     tag: Annotated[
         str | None,
         Field(
             default=None,
-            description="[Walmart] Filter to operations whose OpenAPI tags include this value.",
+            description="Filter to operations whose OpenAPI tags include this value.",
         ),
     ] = None,
     method: Annotated[
         HttpMethod | None,
-        Field(default=None, description="[Walmart] Filter by HTTP verb."),
+        Field(default=None, description="Filter by HTTP verb."),
     ] = None,
 ) -> dict[str, Any]:
     try:
@@ -279,7 +277,7 @@ async def describe_endpoint(
         str,
         Field(
             description=(
-                "[Walmart] Operation id, qualified as api:operationId (e.g. "
+                "Operation id, qualified as api:operationId (e.g. "
                 "walmart:marketplace:order-management:getAllOrders) or bare when "
                 "unambiguous. Src: operations."
             )
@@ -290,7 +288,7 @@ async def describe_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] Api to resolve a bare operation_id in, e.g. "
+                "Api to resolve a bare operation_id in, e.g. "
                 "walmart:ads:sponsored-products. Src: apis."
             ),
         ),
@@ -349,13 +347,13 @@ def _resolve_target(
 async def call_endpoint(
     region: Annotated[
         str,
-        Field(description="[Walmart] Region label, e.g. us. Src: config."),
+        Field(description="Region label, e.g. us. Src: config."),
     ],
     environment: Annotated[
         str,
         Field(
             description=(
-                "[Walmart] Target environment. walmart:marketplace accepts production or "
+                "Target environment. walmart:marketplace accepts production or "
                 "sandbox; the ads platforms accept whatever the config declares, usually "
                 "production or staging. Src: config."
             )
@@ -366,7 +364,7 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] Operation id, qualified as api:operationId (e.g. "
+                "Operation id, qualified as api:operationId (e.g. "
                 "walmart:ads:sponsored-products:SBAProfileUpdateV2) or bare when "
                 "unambiguous. Resolves the api, platform, method, path, and required "
                 "headers. Src: operations."
@@ -378,7 +376,7 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] Api to call, e.g. walmart:marketplace:order-management. "
+                "Api to call, e.g. walmart:marketplace:order-management. "
                 "Required with raw method+path; otherwise inferred from operation_id. "
                 "Src: apis."
             ),
@@ -388,7 +386,7 @@ async def call_endpoint(
         HttpMethod | None,
         Field(
             default=None,
-            description="[Walmart] HTTP method. Required unless operation_id is given.",
+            description="HTTP method. Required unless operation_id is given.",
         ),
     ] = None,
     path: Annotated[
@@ -396,7 +394,7 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] API path after the base URL, e.g. /v3/orders or /api/v1/campaigns. "
+                "API path after the base URL, e.g. /v3/orders or /api/v1/campaigns. "
                 "Required unless operation_id is given."
             ),
         ),
@@ -406,22 +404,20 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] Values for {placeholders} in the path, "
-                'e.g. {"purchaseOrderId": "1796277083022"}.'
+                'Values for {placeholders} in the path, e.g. {"purchaseOrderId": "1796277083022"}.'
             ),
         ),
     ] = None,
     params: Annotated[
         dict[str, Any] | None,
-        Field(default=None, description="[Walmart] Query string parameters as a JSON object."),
+        Field(default=None, description="Query string parameters as a JSON object."),
     ] = None,
     body: Annotated[
         dict[str, Any] | list[Any] | None,
         Field(
             default=None,
             description=(
-                "[Walmart] JSON request body for POST/PUT/PATCH "
-                "(object or array when the API requires it)."
+                "JSON request body for POST/PUT/PATCH (object or array when the API requires it)."
             ),
         ),
     ] = None,
@@ -430,7 +426,7 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] Local file to send as multipart/form-data instead of a JSON body — "
+                "Local file to send as multipart/form-data instead of a JSON body — "
                 "Marketplace feed uploads. Pair with the feedType query parameter."
             ),
         ),
@@ -440,7 +436,7 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] Required on walmart:marketplace, where it selects the credential "
+                "Required on walmart:marketplace, where it selects the credential "
                 "to act as. On the ads platforms it is optional and sent as X-Advertiser-ID, "
                 "which many display/creative/campaign endpoints require. Src: config."
             ),
@@ -451,7 +447,7 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] WAP tenant for non-US walmart:ads regions, e.g. WMT_CA, WMT_MX, "
+                "WAP tenant for non-US walmart:ads regions, e.g. WMT_CA, WMT_MX, "
                 "WBD_OD. Omit for US and for walmart:marketplace. Sent as wap-tenant-id."
             ),
         ),
@@ -535,13 +531,13 @@ async def call_endpoint(
 async def download_file(
     region: Annotated[
         str,
-        Field(description="[Walmart] Region label, e.g. us. Src: config."),
+        Field(description="Region label, e.g. us. Src: config."),
     ],
     environment: Annotated[
         str,
         Field(
             description=(
-                "[Walmart] Target environment. walmart:marketplace accepts production or "
+                "Target environment. walmart:marketplace accepts production or "
                 "sandbox; the ads platforms accept whatever the config declares, usually "
                 "production or staging. Src: config."
             )
@@ -552,7 +548,7 @@ async def download_file(
         Field(
             default=None,
             description=(
-                "[Walmart] Platform to authenticate as. Required with a bare url; "
+                "Platform to authenticate as. Required with a bare url; "
                 "otherwise inferred from operation_id or api. Src: apis."
             ),
         ),
@@ -562,8 +558,7 @@ async def download_file(
         Field(
             default=None,
             description=(
-                "[Walmart] Absolute URL to fetch, e.g. a snapshot or report URL returned "
-                "by a previous call."
+                "Absolute URL to fetch, e.g. a snapshot or report URL returned by a previous call."
             ),
         ),
     ] = None,
@@ -571,38 +566,38 @@ async def download_file(
         str | None,
         Field(
             default=None,
-            description="[Walmart] Operation id, qualified or bare. Src: operations.",
+            description="Operation id, qualified or bare. Src: operations.",
         ),
     ] = None,
     api: Annotated[
         str | None,
         Field(
             default=None,
-            description="[Walmart] Api to call when using method+path. Src: apis.",
+            description="Api to call when using method+path. Src: apis.",
         ),
     ] = None,
     method: Annotated[
         HttpMethod | None,
-        Field(default=None, description="[Walmart] HTTP method when using path. Defaults to GET."),
+        Field(default=None, description="HTTP method when using path. Defaults to GET."),
     ] = None,
     path: Annotated[
         str | None,
-        Field(default=None, description="[Walmart] API path when not using url."),
+        Field(default=None, description="API path when not using url."),
     ] = None,
     path_params: Annotated[
         dict[str, Any] | None,
-        Field(default=None, description="[Walmart] Values for {placeholders} in path."),
+        Field(default=None, description="Values for {placeholders} in path."),
     ] = None,
     params: Annotated[
         dict[str, Any] | None,
-        Field(default=None, description="[Walmart] Query string parameters as a JSON object."),
+        Field(default=None, description="Query string parameters as a JSON object."),
     ] = None,
     dest_path: Annotated[
         str | None,
         Field(
             default=None,
             description=(
-                "[Walmart] Local path to write the bytes to. Omit to gunzip and cache the "
+                "Local path to write the bytes to. Omit to gunzip and cache the "
                 "payload instead, readable at the returned cached_at resource."
             ),
         ),
@@ -612,7 +607,7 @@ async def download_file(
         Field(
             default=None,
             description=(
-                "[Walmart] Required on walmart:marketplace (selects the credential) and by "
+                "Required on walmart:marketplace (selects the credential) and by "
                 "display snapshot downloads, where it is sent as X-Advertiser-ID and as the "
                 "advertiserId query parameter. Src: config."
             ),
@@ -622,9 +617,7 @@ async def download_file(
         str | None,
         Field(
             default=None,
-            description=(
-                "[Walmart] WAP tenant for non-US walmart:ads regions. Sent as wap-tenant-id."
-            ),
+            description=("WAP tenant for non-US walmart:ads regions. Sent as wap-tenant-id."),
         ),
     ] = None,
 ) -> DownloadToolResult:
@@ -759,7 +752,7 @@ async def refresh_specs(
         Field(
             default=None,
             description=(
-                "[Walmart] Refresh only this api, e.g. "
+                "Refresh only this api, e.g. "
                 "walmart:marketplace:order-management. The two auxiliary walmart:ads specs "
                 "are valid here. Src: apis."
             ),

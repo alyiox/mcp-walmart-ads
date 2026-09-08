@@ -100,8 +100,26 @@ Assisted-by: Claude:claude-opus-4-6 coccinelle sparse
 
 Normative, high-density metadata: enough for correct tool and parameter selection, minimal to reduce token cost.
 
-* **The tool/parameter description MUST start with [Walmart], followed by a Verb-Object fragment**, e.g. `[Walmart] Execute an authenticated API request`, `[Walmart] List OpenAPI operations`, `[Walmart] Describe one OpenAPI operation`. The tag is platform-neutral because one server fronts Walmart Connect, Sam's Club, and Walmart Marketplace.
-* **Use tag-based lineage (Src: <Entity>) for parameters that refer to entities this server owns** (e.g. region/environment/advertiser_id → Src: config, operation id → Src: operations, api/platform → Src: apis).
+### Tools and resources
+
+* Description MUST start with `[Walmart]` and a Verb-Object fragment — `[Walmart] Execute an authenticated API request`, `[Walmart] List OpenAPI operations`. The tag disambiguates in a host's flat, multi-server tool list.
+* Describe what changes a caller's decision. Mechanics they cannot influence — retry policy, redirect handling — belong in a module docstring.
+
+### Parameters
+
+* No `[Walmart]` prefix: a parameter is only read inside its own tool's schema.
+* Noun phrase, not Verb-Object. Use a verb only for a filter or an action (`Limit to one api`, `Filter by HTTP verb`).
+* `Src: <Entity>` for entities this server owns — region/environment/advertiser_id → `config`, operation id → `operations`, api/platform → `apis`.
+* Give an example when the shape is not obvious from the name, and keep it current — a stale id steers an agent to build one that cannot resolve.
+
+### Closed value sets
+
+* Values fixed at build time → `Literal`, so the host rejects a bad one before the call.
+* Do not enumerate a large set a resource already lists (`api`); use `Src:` instead.
+* A `Literal` mirroring a runtime constant needs a test that the two match.
+
+### Annotations
+
 * **Every tool MUST declare `ToolAnnotations`**, mapped from the operation it performs:
   * Read → `read_only_hint=True`
   * Create → `read_only_hint=False`, `destructive_hint=False`, `idempotent_hint=False`
@@ -110,4 +128,4 @@ Normative, high-density metadata: enough for correct tool and parameter selectio
   * A passthrough tool that can perform any of the above takes the most cautious shape (`destructive_hint=True`, `idempotent_hint=False`)
   * Set `open_world_hint=True` when the tool reaches the network, `False` when it only reads bundled specs or config
   * Omit `destructive_hint`/`idempotent_hint` on read-only tools — they are meaningful only when `read_only_hint=False`
-
+* Writing to the local filesystem is not read-only, even when the network call is a read.

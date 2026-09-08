@@ -93,10 +93,21 @@ async def test_exactly_five_tools_are_registered():
 async def test_every_tool_and_resource_description_is_namespaced():
     for tool in await server.mcp.list_tools():
         assert tool.description and tool.description.startswith("[Walmart]")
-        for prop in tool.input_schema.get("properties", {}).values():
-            assert prop.get("description", "").startswith("[Walmart]")
     for resource in await server.mcp.list_resources():
         assert resource.description and resource.description.startswith("[Walmart]")
+
+
+@pytest.mark.asyncio
+async def test_no_parameter_description_carries_the_namespace_tag():
+    # A parameter is only read inside its own tool's schema, so the tag would be
+    # repetition with nothing to disambiguate.
+    offenders = [
+        f"{tool.name}.{name}"
+        for tool in await server.mcp.list_tools()
+        for name, prop in tool.input_schema.get("properties", {}).items()
+        if prop.get("description", "").startswith("[Walmart]")
+    ]
+    assert offenders == [], f"parameters must not repeat the tag: {offenders}"
 
 
 @pytest.mark.asyncio
@@ -691,7 +702,9 @@ async def test_every_description_is_namespaced_and_non_empty():
     )
     for where, text in descriptions.items():
         assert text, f"{where} has no description"
-        if where != "<instructions>":
+        # Tools and resources carry the tag; parameters deliberately do not, and
+        # "<instructions>" is server-level prose.
+        if "." not in where and where != "<instructions>":
             assert text.startswith("[Walmart]"), f"{where} is not namespaced"
 
 
