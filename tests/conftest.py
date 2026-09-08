@@ -38,7 +38,7 @@ def raw_config(*, key_name: str = "key.pem") -> dict[str, Any]:
     """A complete, valid config covering all three platforms."""
     return {
         "platforms": {
-            "connect": {
+            "walmart:ads": {
                 "regions": {
                     "us": {
                         "production": {
@@ -46,26 +46,26 @@ def raw_config(*, key_name: str = "key.pem") -> dict[str, Any]:
                             "private_key": key_name,
                             "bearer_token": "connect-bearer",
                             "base_urls": {
-                                "search": "https://advertising.walmart.com",
+                                "sponsored-products": "https://advertising.walmart.com",
                                 "display": "https://api.dsp.walmart.com",
                             },
                         }
                     }
                 }
             },
-            "samsclub": {
+            "samsclub:ads": {
                 "regions": {
                     "us": {
                         "production": {
                             "consumer_id": "sams-consumer",
                             "private_key": key_name,
                             "bearer_token": "sams-bearer",
-                            "base_urls": {"sponsored": "https://advertising.samsclub.com"},
+                            "base_urls": {"sponsored-products": "https://advertising.samsclub.com"},
                         }
                     }
                 }
             },
-            "marketplace": {
+            "walmart:marketplace": {
                 "regions": {
                     "us": {
                         "production": {
@@ -120,7 +120,7 @@ def write_config(tmp_path: Path, key_file: Path):
 @pytest.fixture
 def signature_env(private_key_pem: str) -> SignatureEnv:
     return SignatureEnv(
-        platform="connect",
+        platform="walmart:ads",
         region="us",
         environment="production",
         consumer_id="connect-consumer",
@@ -128,8 +128,8 @@ def signature_env(private_key_pem: str) -> SignatureEnv:
         private_key_version="1",
         bearer_token="connect-bearer",
         base_urls={
-            "connect:search": "https://advertising.walmart.com",
-            "connect:display": "https://api.dsp.walmart.com",
+            "walmart:ads:sponsored-products": "https://advertising.walmart.com",
+            "walmart:ads:display": "https://api.dsp.walmart.com",
         },
     )
 
@@ -146,7 +146,7 @@ def credential() -> Credential:
 @pytest.fixture
 def oauth2_env(credential: Credential) -> OAuth2Env:
     return OAuth2Env(
-        platform="marketplace",
+        platform="walmart:marketplace",
         region="us",
         environment="production",
         credentials=(credential,),

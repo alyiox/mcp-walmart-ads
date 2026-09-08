@@ -35,25 +35,25 @@ def test_no_bundled_file_is_undeclared():
 def test_spec_ids_are_unique_and_platform_qualified():
     ids = [m.spec_id for m in SPECS]
     assert len(ids) == len(set(ids))
-    assert all(m.spec_id.count(":") == 1 for m in SPECS)
+    assert all(m.spec_id.count(":") == 2 for m in SPECS)
     assert all(m.spec_id.startswith(m.platform + ":") for m in SPECS)
 
 
 def test_api_surface_excludes_the_auxiliary_connect_specs():
     aux = {m.spec_id for m in SPECS if not m.in_surface}
-    assert aux == {"connect:ad-id-token-generation", "connect:conversion-rest-api"}
+    assert aux == {"walmart:ads:ad-id-token", "walmart:ads:conversions"}
     assert aux.isdisjoint(API_IDS)
 
 
 def test_rel_path_derives_from_the_spec_id():
-    meta = specs.meta_for("marketplace:order-management")
-    assert meta.rel_path == "marketplace/order-management.openapi.json"
+    meta = specs.meta_for("walmart:marketplace:order-management")
+    assert meta.rel_path == "walmart/marketplace/order-management.openapi.json"
 
 
 def test_unknown_api_names_the_known_ones():
     with pytest.raises(SpecError) as excinfo:
-        specs.meta_for("marketplace:no-such-domain")
-    assert "connect:search" in str(excinfo.value)
+        specs.meta_for("walmart:marketplace:no-such-domain")
+    assert "walmart:ads:sponsored-products" in str(excinfo.value)
 
 
 # ── sources ───────────────────────────────────────────────────────────────────
@@ -66,11 +66,11 @@ def test_registry_source_builds_its_registry_url():
 
 def test_samsclub_is_the_only_url_sourced_spec():
     url_sourced = [m.spec_id for m in SPECS if isinstance(m.source, UrlSource)]
-    assert url_sourced == ["samsclub:sponsored"]
+    assert url_sourced == ["samsclub:ads:sponsored-products"]
 
 
 def test_url_source_defaults_to_unauthenticated():
-    meta = specs.meta_for("samsclub:sponsored")
+    meta = specs.meta_for("samsclub:ads:sponsored-products")
     assert isinstance(meta.source, UrlSource)
     assert meta.source.auth is False
 
@@ -110,51 +110,53 @@ def test_auth_headers_are_attached_only_for_an_authenticated_url_source():
 
 
 def test_marketplace_specs_inherit_the_platform_environments():
-    assert specs.meta_for("marketplace:order-management").environments_for() == (
+    assert specs.meta_for("walmart:marketplace:order-management").environments_for() == (
         "production",
         "sandbox",
     )
 
 
 def test_ads_specs_defer_their_environments_to_the_config():
-    assert specs.meta_for("connect:search").environments_for() is None
-    assert specs.meta_for("samsclub:sponsored").environments_for() is None
+    assert specs.meta_for("walmart:ads:sponsored-products").environments_for() is None
+    assert specs.meta_for("samsclub:ads:sponsored-products").environments_for() is None
 
 
 def test_single_environment_specs_are_gated():
-    assert specs.meta_for("marketplace:recommendations-api").environments_for() == ("production",)
-    assert specs.meta_for("marketplace:simulations-api").environments_for() == ("sandbox",)
+    assert specs.meta_for("walmart:marketplace:recommendations-api").environments_for() == (
+        "production",
+    )
+    assert specs.meta_for("walmart:marketplace:simulations-api").environments_for() == ("sandbox",)
 
 
 def test_unreachable_environment_raises_naming_what_is_reachable():
     with pytest.raises(SpecError) as excinfo:
-        specs.resolve_base_url("marketplace:simulations-api", "production")
+        specs.resolve_base_url("walmart:marketplace:simulations-api", "production")
     assert "available: sandbox" in str(excinfo.value)
 
 
 def test_fixed_base_url_appends_the_declared_suffix():
     assert (
-        specs.resolve_base_url("marketplace:simulations-api", "sandbox")
+        specs.resolve_base_url("walmart:marketplace:simulations-api", "sandbox")
         == "https://sandbox.walmartapis.com/v1"
     )
     assert (
-        specs.resolve_base_url("marketplace:order-management", "production")
+        specs.resolve_base_url("walmart:marketplace:order-management", "production")
         == "https://marketplace.walmartapis.com"
     )
 
 
 def test_config_sourced_base_url_is_read_from_the_mapping():
     resolved = specs.resolve_base_url(
-        "connect:search",
+        "walmart:ads:sponsored-products",
         "production",
-        config_base_urls={"connect:search": "https://advertising.walmart.com/"},
+        config_base_urls={"walmart:ads:sponsored-products": "https://advertising.walmart.com/"},
     )
     assert resolved == "https://advertising.walmart.com"
 
 
 def test_config_sourced_base_url_missing_is_an_error():
     with pytest.raises(SpecError) as excinfo:
-        specs.resolve_base_url("connect:search", "production", config_base_urls={})
+        specs.resolve_base_url("walmart:ads:sponsored-products", "production", config_base_urls={})
     assert "no base_url configured" in str(excinfo.value)
 
 
@@ -162,7 +164,7 @@ def test_config_sourced_base_url_missing_is_an_error():
 
 
 def test_bundled_spec_loads_as_an_openapi_document():
-    spec = specs.load_spec("connect:search")
+    spec = specs.load_spec("walmart:ads:sponsored-products")
     assert "paths" in spec
     assert spec.get("openapi") or spec.get("swagger")
 
@@ -174,20 +176,20 @@ def test_missing_spec_file_raises():
 
 def test_malformed_spec_file_names_the_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
-    target = tmp_path / "connect" / "search.openapi.json"
+    target = tmp_path / "walmart" / "ads" / "sponsored-products.openapi.json"
     target.parent.mkdir(parents=True)
     target.write_text("{not json")
     with pytest.raises(SpecError) as excinfo:
-        specs.load_spec("connect:search")
+        specs.load_spec("walmart:ads:sponsored-products")
     assert "not valid JSON" in str(excinfo.value)
 
 
 def test_cache_takes_precedence_over_the_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
-    target = tmp_path / "connect" / "search.openapi.json"
+    target = tmp_path / "walmart" / "ads" / "sponsored-products.openapi.json"
     target.parent.mkdir(parents=True)
     target.write_text(json.dumps({"openapi": "3.0.0", "paths": {}, "info": {"title": "cached"}}))
-    assert specs.load_spec("connect:search")["info"]["title"] == "cached"
+    assert specs.load_spec("walmart:ads:sponsored-products")["info"]["title"] == "cached"
 
 
 def test_prune_keeps_small_examples_and_drops_large_ones():
@@ -225,8 +227,10 @@ def test_prune_recurses_through_lists():
 def test_bundled_files_are_stored_verbatim():
     # load_spec prunes on the way out; the file itself must keep what upstream
     # served, so a refresh diff shows only real upstream change.
-    raw = json.loads(specs.bundled_path(specs.meta_for("marketplace:item-management")).read_text())
-    assert raw != specs.load_spec("marketplace:item-management")
+    raw = json.loads(
+        specs.bundled_path(specs.meta_for("walmart:marketplace:item-management")).read_text()
+    )
+    assert raw != specs.load_spec("walmart:marketplace:item-management")
 
 
 # ── refresh ───────────────────────────────────────────────────────────────────
@@ -244,17 +248,17 @@ async def test_refresh_writes_the_cache(tmp_path: Path, monkeypatch: pytest.Monk
             "paths": {"/a": {}},
         },
     )
-    rows = await specs.refresh("connect:search")
+    rows = await specs.refresh("walmart:ads:sponsored-products")
     assert rows == [
         {
-            "api": "connect:search",
+            "api": "walmart:ads:sponsored-products",
             "status": "written",
             "version": "9.9",
             "paths": 1,
-            "cached_at": str(tmp_path / "connect" / "search.openapi.json"),
+            "cached_at": str(tmp_path / "walmart" / "ads" / "sponsored-products.openapi.json"),
         }
     ]
-    assert (tmp_path / "connect" / "search.openapi.json").is_file()
+    assert (tmp_path / "walmart" / "ads" / "sponsored-products.openapi.json").is_file()
 
 
 @pytest.mark.asyncio
@@ -271,15 +275,15 @@ async def test_refresh_reports_per_spec_errors_without_aborting(
     monkeypatch.setattr(specs, "fetch_spec", flaky)
     rows = await specs.refresh()
     statuses = {r["api"]: r["status"] for r in rows}
-    assert statuses["samsclub:sponsored"] == "error"
-    assert statuses["connect:search"] == "written"
+    assert statuses["samsclub:ads:sponsored-products"] == "error"
+    assert statuses["walmart:ads:sponsored-products"] == "written"
     assert len(rows) == len(SPECS)
 
 
 @pytest.mark.asyncio
 async def test_refresh_of_an_unknown_api_raises():
     with pytest.raises(SpecError):
-        await specs.refresh("marketplace:nope")
+        await specs.refresh("walmart:marketplace:nope")
 
 
 def test_write_spec_is_atomic_and_compact(tmp_path: Path):
@@ -290,8 +294,60 @@ def test_write_spec_is_atomic_and_compact(tmp_path: Path):
 
 
 def test_spec_meta_defaults_are_surface_and_no_suffix():
-    meta = SpecMeta("connect:x", RegistrySource("u"))
+    meta = SpecMeta("walmart:ads:x", RegistrySource("u"))
     assert meta.in_surface is True
     assert meta.base_suffix == ""
-    assert meta.platform == "connect"
+    assert meta.platform == "walmart:ads"
     assert meta.name == "x"
+    assert meta.suffix == "ads:x"
+    assert meta.rel_path == "walmart/ads/x.openapi.json"
+
+
+# ── mirroring ─────────────────────────────────────────────────────────────────
+
+
+def test_the_two_sponsored_products_apis_mirror_each_other():
+    assert specs.mirrors_of("walmart:ads:sponsored-products") == (
+        "samsclub:ads:sponsored-products",
+    )
+    assert specs.mirrors_of("samsclub:ads:sponsored-products") == (
+        "walmart:ads:sponsored-products",
+    )
+
+
+def test_an_api_with_no_counterpart_mirrors_nothing():
+    assert specs.mirrors_of("walmart:ads:display") == ()
+    assert specs.mirrors_of("walmart:marketplace:order-management") == ()
+
+
+def test_mirroring_is_keyed_on_the_line_and_name_suffix():
+    left = specs.meta_for("walmart:ads:sponsored-products")
+    right = specs.meta_for("samsclub:ads:sponsored-products")
+    assert left.suffix == right.suffix == "ads:sponsored-products"
+    assert left.platform != right.platform
+
+
+def test_mirrors_never_include_an_auxiliary_spec():
+    for meta in SPECS:
+        assert all(specs.meta_for(m).in_surface for m in specs.mirrors_of(meta.spec_id))
+
+
+# ── the auxiliary specs are addressable, just not discoverable ────────────────
+
+
+def test_meta_for_accepts_an_auxiliary_spec():
+    # They are callable by raw method+path and refreshable, so meta_for must
+    # resolve them even though discovery never lists them.
+    for aux in ("walmart:ads:ad-id-token", "walmart:ads:conversions"):
+        assert specs.meta_for(aux).in_surface is False
+
+
+def test_the_unknown_api_error_lists_every_spec_it_accepts():
+    with pytest.raises(SpecError) as excinfo:
+        specs.meta_for("walmart:ads:no-such-thing")
+    message = str(excinfo.value)
+    # Must name the auxiliary ids too: they are valid here, so omitting them
+    # would tell a caller they do not exist.
+    assert "walmart:ads:ad-id-token" in message
+    assert "walmart:ads:conversions" in message
+    assert "walmart:marketplace:order-management" in message

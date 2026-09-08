@@ -1,8 +1,15 @@
-"""The three API families this server fronts, and what differs between them.
+"""The credential boundaries this server fronts, and what differs between them.
 
-Each platform contributes its own OpenAPI specs (see :mod:`.specs`) to one flat
-``api`` namespace, but they do not share an auth model or a way of resolving a
-base URL, and those two axes are the whole reason this registry exists:
+An api id is hierarchical -- ``<retailer>:<line>:<name>``, e.g.
+``walmart:ads:sponsored-products`` -- and credentials attach at the two-segment
+prefix. That prefix is the *platform*: the unit the config file is keyed by, and
+the only thing that decides how a request is authenticated and where it is sent.
+``retailer`` and ``line`` name the segments of that prefix; neither is a
+parameter anywhere, because neither is independently meaningful (``ads`` alone
+says nothing, and ``walmart`` alone spans two unrelated credential sets).
+
+Two axes differ between platforms, and they are the whole reason this registry
+exists:
 
 * **auth** -- Walmart Connect and Sam's Club sign every request with an
   RSA-SHA256 signature over the consumer id and a timestamp, plus a long-lived
@@ -30,13 +37,19 @@ MARKETPLACE_SANDBOX_BASE_URL = "https://sandbox.walmartapis.com"
 
 @dataclass(frozen=True)
 class Platform:
-    """One API family: how it authenticates and where its hosts come from."""
+    """One credential boundary: how it authenticates and where its hosts come from."""
 
-    id: str
+    retailer: str
+    line: str
     title: str
     auth: str
     environments: tuple[str, ...] | None = None
     base_urls: dict[str, str] | None = None
+
+    @property
+    def id(self) -> str:
+        """The two-segment prefix shared by every api on this platform."""
+        return f"{self.retailer}:{self.line}"
 
     @property
     def base_urls_from_config(self) -> bool:
@@ -45,9 +58,9 @@ class Platform:
 
 
 PLATFORMS: tuple[Platform, ...] = (
-    Platform("connect", "Walmart Connect Ads", SIGNATURE),
-    Platform("samsclub", "Sam's Club Sponsored Ads", SIGNATURE),
+    Platform("walmart", "ads", "Walmart Connect Ads", SIGNATURE),
     Platform(
+        "walmart",
         "marketplace",
         "Walmart Marketplace",
         OAUTH2,
@@ -57,15 +70,26 @@ PLATFORMS: tuple[Platform, ...] = (
             "sandbox": MARKETPLACE_SANDBOX_BASE_URL,
         },
     ),
+    Platform("samsclub", "ads", "Sam's Club Sponsored Ads", SIGNATURE),
 )
 
 PLATFORM_IDS: tuple[str, ...] = tuple(p.id for p in PLATFORMS)
+
+RETAILERS: tuple[str, ...] = tuple(dict.fromkeys(p.retailer for p in PLATFORMS))
 
 _BY_ID: dict[str, Platform] = {p.id: p for p in PLATFORMS}
 
 
 class UnknownPlatform(Exception):
     """Raised when a platform id is not one of :data:`PLATFORM_IDS`."""
+
+
+def platform_of(api: str) -> str:
+    """The platform id owning ``api`` -- its first two segments.
+
+    Purely structural: it does not check that the platform or the api exists.
+    """
+    return ":".join(api.split(":", 2)[:2])
 
 
 def platform_for(platform_id: str) -> Platform:
@@ -75,3 +99,8 @@ def platform_for(platform_id: str) -> Platform:
             f"unknown platform {platform_id!r} (known: {', '.join(PLATFORM_IDS)})"
         )
     return platform
+
+
+def platform_for_api(api: str) -> Platform:
+    """The platform owning ``api``, raising :class:`UnknownPlatform` if there is none."""
+    return platform_for(platform_of(api))

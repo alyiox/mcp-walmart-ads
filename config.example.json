@@ -2,57 +2,33 @@
   "response_cache_ttl": 3600,
   "truncate_threshold": 1024,
   "platforms": {
-    "connect": {
+    "walmart:ads": {
       "regions": {
         "US": {
           "production": {
             "consumer_id": "your-consumer-id",
-            "private_key": "./keys/connect/us-prod.pem",
+            "private_key": "./keys/walmart-ads/us-prod.pem",
             "private_key_version": "1",
             "bearer_token": "your-bearer-token",
             "base_urls": {
-              "search": "https://developer.api.walmart.com/api-proxy/service/WPA/Api/v1",
+              "sponsored-products": "https://developer.api.walmart.com/api-proxy/service/WPA/Api/v1",
               "display": "https://developer.api.walmart.com/api-proxy/service/display/api/v1"
             }
           },
           "staging": {
             "consumer_id": "your-staging-consumer-id",
-            "private_key": "./keys/connect/us-staging.pem",
+            "private_key": "./keys/walmart-ads/us-staging.pem",
             "private_key_version": "1",
             "bearer_token": "your-staging-bearer-token",
             "base_urls": {
-              "search": "https://developer.api.stg.walmart.com/api-proxy/service/WPA/Api/v1",
+              "sponsored-products": "https://developer.api.stg.walmart.com/api-proxy/service/WPA/Api/v1",
               "display": "https://developer.api.us.stg.walmart.com/api-proxy/service/display/api/v1"
             }
           }
         }
       }
     },
-    "samsclub": {
-      "regions": {
-        "US": {
-          "production": {
-            "consumer_id": "your-consumer-id",
-            "private_key": "./keys/samsclub/us-prod.pem",
-            "private_key_version": "1",
-            "bearer_token": "your-bearer-token",
-            "base_urls": {
-              "sponsored": "https://developer.api.us.walmart.com/api-proxy/service/sp/api-sams/v1"
-            }
-          },
-          "sandbox": {
-            "consumer_id": "your-sandbox-consumer-id",
-            "private_key": "./keys/samsclub/us-sandbox.pem",
-            "private_key_version": "1",
-            "bearer_token": "your-sandbox-bearer-token",
-            "base_urls": {
-              "sponsored": "https://developer.api.us.stg.walmart.com/api-proxy/service/sp/api-sams/v1"
-            }
-          }
-        }
-      }
-    },
-    "marketplace": {
+    "walmart:marketplace": {
       "regions": {
         "US": {
           "production": {
@@ -75,6 +51,30 @@
                 "advertisers": [{ "id": 7060158 }]
               }
             ]
+          }
+        }
+      }
+    },
+    "samsclub:ads": {
+      "regions": {
+        "US": {
+          "production": {
+            "consumer_id": "your-consumer-id",
+            "private_key": "./keys/samsclub-ads/us-prod.pem",
+            "private_key_version": "1",
+            "bearer_token": "your-bearer-token",
+            "base_urls": {
+              "sponsored-products": "https://developer.api.us.walmart.com/api-proxy/service/sp/api-sams/v1"
+            }
+          },
+          "sandbox": {
+            "consumer_id": "your-sandbox-consumer-id",
+            "private_key": "./keys/samsclub-ads/us-sandbox.pem",
+            "private_key_version": "1",
+            "bearer_token": "your-sandbox-bearer-token",
+            "base_urls": {
+              "sponsored-products": "https://developer.api.us.stg.walmart.com/api-proxy/service/sp/api-sams/v1"
+            }
           }
         }
       }

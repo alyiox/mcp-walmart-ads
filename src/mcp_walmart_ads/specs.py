@@ -1,9 +1,17 @@
 """OpenAPI spec bundling, pruning, caching, and runtime refresh.
 
 Every api this server exposes is backed by one bundled OpenAPI document. A
-spec's id doubles as its public ``api`` id -- ``<platform>:<name>`` -- and
-determines where it sits on disk (``specs/<platform>/<name>.openapi.json``), so
-there is one identifier rather than a table mapping three of them together.
+spec's id doubles as its public ``api`` id -- ``<retailer>:<line>:<name>``, e.g.
+``walmart:ads:sponsored-products`` -- and determines where it sits on disk
+(``specs/<retailer>/<line>/<name>.openapi.json``), so there is one identifier
+rather than a table mapping three of them together. Credentials attach at the
+two-segment prefix; see :mod:`.platforms`.
+
+Two apis *mirror* each other when their ``<line>:<name>`` suffix matches:
+``walmart:ads:sponsored-products`` and ``samsclub:ads:sponsored-products`` are
+the same surface behind different credentials, which is why so many of their
+operation ids collide. :func:`mirrors_of` reports that so an agent can transfer
+what it knows from one to the other.
 
 Specs reach us two ways, which is what :data:`SpecSource` distinguishes:
 
@@ -46,7 +54,7 @@ from typing import Any
 
 import httpx
 
-from .platforms import platform_for
+from .platforms import platform_for, platform_of
 
 BUNDLE_DIR = Path(__file__).parent / "specs"
 REGISTRY_URL = "https://dash.readme.com/api/v1/api-registry/{uuid}"
@@ -56,7 +64,7 @@ REGISTRY_URL = "https://dash.readme.com/api/v1/api-registry/{uuid}"
 # authenticated source (auth=True).
 _SAMSCLUB_SOURCE_URL = (
     "https://raw.githubusercontent.com/alyiox/mcp-walmart-ads/main/"
-    "src/mcp_walmart_ads/specs/samsclub/sponsored.openapi.json"
+    "src/mcp_walmart_ads/specs/samsclub/ads/sponsored-products.openapi.json"
 )
 
 
@@ -91,9 +99,10 @@ class SpecMeta:
     """One bundled OpenAPI spec, its source, and where it is reachable.
 
     ``in_surface`` is ``False`` for auxiliary documents that are bundled and
-    refreshable but not part of the ``api`` namespace -- Walmart Connect's ad-id
-    token generation and conversion services, which an agent reaches by raw
-    method+path rather than by operation id.
+    refreshable but not part of the discovery namespace -- Walmart Connect's
+    ad-id token and conversion services, which an agent reaches by raw
+    method+path rather than by operation id. They remain valid ``api`` values for
+    ``call_endpoint`` and ``refresh_specs``.
 
     ``environments`` overrides the platform's own set for the two Marketplace
     specs that exist in only one, and ``base_suffix`` is appended to the
@@ -109,15 +118,22 @@ class SpecMeta:
 
     @property
     def platform(self) -> str:
-        return self.spec_id.partition(":")[0]
+        """The two-segment credential prefix, e.g. ``walmart:ads``."""
+        return platform_of(self.spec_id)
 
     @property
     def name(self) -> str:
-        return self.spec_id.partition(":")[2]
+        """The final segment, e.g. ``sponsored-products``."""
+        return self.spec_id.split(":", 2)[2]
+
+    @property
+    def suffix(self) -> str:
+        """``<line>:<name>`` -- what mirrored apis share."""
+        return self.spec_id.split(":", 1)[1]
 
     @property
     def rel_path(self) -> str:
-        return f"{self.platform}/{self.name}.openapi.json"
+        return f"{self.platform.replace(':', '/')}/{self.name}.openapi.json"
 
     def environments_for(self) -> tuple[str, ...] | None:
         """Environments this spec is reachable in, or ``None`` when config decides."""
@@ -127,59 +143,53 @@ class SpecMeta:
 
 
 SPECS: tuple[SpecMeta, ...] = (
-    # ── Walmart Connect ───────────────────────────────────────────────────────
-    SpecMeta("connect:search", RegistrySource("19bso1c5mqa9d5h0")),
-    SpecMeta("connect:display", RegistrySource("1dgni53lmq8rnndr")),
+    # -- Walmart Connect Ads -----------------------------------------------------
+    SpecMeta("walmart:ads:sponsored-products", RegistrySource("19bso1c5mqa9d5h0")),
+    SpecMeta("walmart:ads:display", RegistrySource("1dgni53lmq8rnndr")),
+    SpecMeta("walmart:ads:ad-id-token", RegistrySource("e1ttaq42mcbiy2r7"), in_surface=False),
+    SpecMeta("walmart:ads:conversions", RegistrySource("7ve8omcuu9fg4"), in_surface=False),
+    # -- Sam's Club Sponsored Ads ------------------------------------------------
+    SpecMeta("samsclub:ads:sponsored-products", UrlSource(_SAMSCLUB_SOURCE_URL)),
+    # -- Walmart Marketplace -----------------------------------------------------
+    SpecMeta("walmart:marketplace:advertising", RegistrySource("mr9kmmqzd85v3")),
+    SpecMeta("walmart:marketplace:assortment-recommendations", RegistrySource("13foynfmmobukfmi")),
+    SpecMeta("walmart:marketplace:authentication", RegistrySource("a9esg267mowj5di6")),
+    SpecMeta("walmart:marketplace:claims", RegistrySource("79bqa2jmfedtkpg")),
+    SpecMeta("walmart:marketplace:disputes-management", RegistrySource("8p3xm33mj3exh1b")),
+    SpecMeta("walmart:marketplace:feed-management", RegistrySource("1ll8566gmsf4pry5")),
+    SpecMeta("walmart:marketplace:fulfillment-management", RegistrySource("gqmq6domrobwc0d")),
+    SpecMeta("walmart:marketplace:insights-management", RegistrySource("d7xjqfjmsi2tzdi")),
+    SpecMeta("walmart:marketplace:inventory-management", RegistrySource("22eckdhmr9igu74")),
+    SpecMeta("walmart:marketplace:item-management", RegistrySource("5q259gms7zbtw0")),
+    SpecMeta("walmart:marketplace:lag-time", RegistrySource("1zzm8322midmdp55")),
+    SpecMeta("walmart:marketplace:notifications-management", RegistrySource("9r21x31mqtwfz9u")),
+    SpecMeta("walmart:marketplace:on-request-report-management", RegistrySource("d50o1zmsxhe94g")),
+    SpecMeta("walmart:marketplace:order-management", RegistrySource("ckuhkx9bms7x4mtd")),
+    SpecMeta("walmart:marketplace:payment-reports", RegistrySource("3meqaxj10mfedzr2w")),
+    SpecMeta("walmart:marketplace:payments", RegistrySource("dpghjmo3ci7ay")),
+    SpecMeta("walmart:marketplace:price-management", RegistrySource("1dgni510mmq5hnqm2")),
+    SpecMeta("walmart:marketplace:promotion-management", RegistrySource("kgplbyk3mo1plit7")),
     SpecMeta(
-        "connect:ad-id-token-generation",
-        RegistrySource("e1ttaq42mcbiy2r7"),
-        in_surface=False,
-    ),
-    SpecMeta(
-        "connect:conversion-rest-api",
-        RegistrySource("7ve8omcuu9fg4"),
-        in_surface=False,
-    ),
-    # ── Sam's Club ────────────────────────────────────────────────────────────
-    SpecMeta("samsclub:sponsored", UrlSource(_SAMSCLUB_SOURCE_URL)),
-    # ── Walmart Marketplace ───────────────────────────────────────────────────
-    SpecMeta("marketplace:advertising", RegistrySource("mr9kmmqzd85v3")),
-    SpecMeta("marketplace:assortment-recommendations", RegistrySource("13foynfmmobukfmi")),
-    SpecMeta("marketplace:authentication", RegistrySource("a9esg267mowj5di6")),
-    SpecMeta("marketplace:claims", RegistrySource("79bqa2jmfedtkpg")),
-    SpecMeta("marketplace:disputes-management", RegistrySource("8p3xm33mj3exh1b")),
-    SpecMeta("marketplace:feed-management", RegistrySource("1ll8566gmsf4pry5")),
-    SpecMeta("marketplace:fulfillment-management", RegistrySource("gqmq6domrobwc0d")),
-    SpecMeta("marketplace:insights-management", RegistrySource("d7xjqfjmsi2tzdi")),
-    SpecMeta("marketplace:inventory-management", RegistrySource("22eckdhmr9igu74")),
-    SpecMeta("marketplace:item-management", RegistrySource("5q259gms7zbtw0")),
-    SpecMeta("marketplace:lag-time", RegistrySource("1zzm8322midmdp55")),
-    SpecMeta("marketplace:notifications-management", RegistrySource("9r21x31mqtwfz9u")),
-    SpecMeta("marketplace:on-request-report-management", RegistrySource("d50o1zmsxhe94g")),
-    SpecMeta("marketplace:order-management", RegistrySource("ckuhkx9bms7x4mtd")),
-    SpecMeta("marketplace:payment-reports", RegistrySource("3meqaxj10mfedzr2w")),
-    SpecMeta("marketplace:payments", RegistrySource("dpghjmo3ci7ay")),
-    SpecMeta("marketplace:price-management", RegistrySource("1dgni510mmq5hnqm2")),
-    SpecMeta("marketplace:promotion-management", RegistrySource("kgplbyk3mo1plit7")),
-    SpecMeta(
-        "marketplace:recommendations-api",
+        "walmart:marketplace:recommendations-api",
         RegistrySource("er71zz33pmr9ig743"),
         environments=("production",),
     ),
-    SpecMeta("marketplace:returns-management", RegistrySource("16fdhuump2rm1l6")),
-    SpecMeta("marketplace:reviews-acceleration", RegistrySource("1dyxmsvmruw59jp")),
-    SpecMeta("marketplace:rich-media", RegistrySource("b85t6gbmshu71jg")),
-    SpecMeta("marketplace:settings-management", RegistrySource("1hmzcklmshvsx6g")),
-    SpecMeta("marketplace:ship-with-walmart", RegistrySource("jdmu1a73zmrjvjw3x")),
-    SpecMeta("marketplace:simplified-shipping-settings", RegistrySource("1ll856cvmsf1yqr4")),
+    SpecMeta("walmart:marketplace:returns-management", RegistrySource("16fdhuump2rm1l6")),
+    SpecMeta("walmart:marketplace:reviews-acceleration", RegistrySource("1dyxmsvmruw59jp")),
+    SpecMeta("walmart:marketplace:rich-media", RegistrySource("b85t6gbmshu71jg")),
+    SpecMeta("walmart:marketplace:settings-management", RegistrySource("1hmzcklmshvsx6g")),
+    SpecMeta("walmart:marketplace:ship-with-walmart", RegistrySource("jdmu1a73zmrjvjw3x")),
     SpecMeta(
-        "marketplace:simulations-api",
+        "walmart:marketplace:simplified-shipping-settings", RegistrySource("1ll856cvmsf1yqr4")
+    ),
+    SpecMeta(
+        "walmart:marketplace:simulations-api",
         RegistrySource("1jfaw5ymqbastk5"),
         environments=("sandbox",),
         base_suffix="/v1",
     ),
-    SpecMeta("marketplace:utilities-management", RegistrySource("2pmj1rmfee8qqv")),
-    SpecMeta("marketplace:walmart-plus", RegistrySource("f8nmpc10mhp40c1m")),
+    SpecMeta("walmart:marketplace:utilities-management", RegistrySource("2pmj1rmfee8qqv")),
+    SpecMeta("walmart:marketplace:walmart-plus", RegistrySource("f8nmpc10mhp40c1m")),
 )
 
 SPEC_IDS: tuple[str, ...] = tuple(m.spec_id for m in SPECS)
@@ -247,10 +257,29 @@ def cache_dir() -> Path:
 
 
 def meta_for(spec_id: str) -> SpecMeta:
+    """Look up any bundled spec, auxiliary ones included.
+
+    The error lists all of :data:`SPEC_IDS` rather than :data:`API_IDS`, because
+    the two auxiliary specs are accepted here -- they are callable by raw
+    method+path and refreshable -- and telling a caller they do not exist would
+    be wrong.
+    """
     meta = _BY_ID.get(spec_id)
     if meta is None:
-        raise SpecError(f"unknown api {spec_id!r} (known: {', '.join(API_IDS)})")
+        raise SpecError(f"unknown api {spec_id!r} (known: {', '.join(SPEC_IDS)})")
     return meta
+
+
+def mirrors_of(api: str) -> tuple[str, ...]:
+    """Other apis with the same ``<line>:<name>`` suffix, behind other credentials.
+
+    Sam's Club mirrors Walmart Connect's sponsored-products surface, so an agent
+    that has learned one can address the other by swapping the retailer.
+    """
+    meta = meta_for(api)
+    return tuple(
+        m.spec_id for m in SPECS if m.spec_id != api and m.suffix == meta.suffix and m.in_surface
+    )
 
 
 def bundled_path(meta: SpecMeta) -> Path:

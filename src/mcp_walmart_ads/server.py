@@ -12,7 +12,7 @@ from __future__ import annotations
 import gzip
 import json
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
@@ -22,7 +22,7 @@ from . import client, discovery, specs
 from .auth import AuthError, TokenManager
 from .client import RequestError
 from .config import Config, ConfigError, SignatureEnv, load_config
-from .platforms import PLATFORM_IDS, UnknownPlatform
+from .platforms import PLATFORM_IDS, UnknownPlatform, platform_of
 from .resources import ResponseCache, read_cached_response
 from .specs import SpecError
 
@@ -30,18 +30,30 @@ mcp = MCPServer(
     "Walmart APIs",
     instructions=(
         "MCP server for Walmart Connect Ads, Sam's Club Sponsored Ads, and Walmart "
-        "Marketplace APIs. Discover endpoints with list_endpoints (filter by "
-        "query/api/platform/tag/method) and inspect one with describe_endpoint, which "
-        "returns the operation plus its schema closure and omits the auth and QoS "
-        "headers the server injects itself. Execute with call_endpoint — by operation_id "
-        "(qualified as api:operationId, or bare when unambiguous) or by raw method+path "
-        "with an api. Marketplace calls need an advertiser_id, which selects the "
-        "credential; on the ads platforms it is an optional header. Read wmt://apis for "
-        "the api namespace and wmt://config for what is configured. Fetch reports, "
-        "labels, and snapshots with download_file. The 33 bundled specs can be refreshed "
-        "at runtime with refresh_specs."
+        "Marketplace APIs. Api ids are hierarchical — <retailer>:<line>:<name>, e.g. "
+        "walmart:ads:sponsored-products, samsclub:ads:sponsored-products, "
+        "walmart:marketplace:order-management — and an operation id appends "
+        ":operationId. Credentials attach at the two-segment prefix, so an operation id "
+        "alone determines which platform, host, and auth model a call uses. Discover "
+        "endpoints with list_endpoints (filter by query/api/platform/tag/method) and "
+        "inspect one with describe_endpoint, which returns the operation plus its schema "
+        "closure and omits the auth and QoS headers the server injects itself. Execute "
+        "with call_endpoint — by operation_id, or by raw method+path with an api. "
+        "walmart:marketplace calls need an advertiser_id, which selects the credential; "
+        "on the ads platforms it is an optional header. Read wmt://apis for the api "
+        "namespace and wmt://config for what is configured. Fetch reports, labels, and "
+        "snapshots with download_file. The 33 bundled specs can be refreshed at runtime "
+        "with refresh_specs."
     ),
 )
+
+# Declared as Literals so the host rejects a bad value before the call is made,
+# rather than the server returning an error string a round trip later. Both sets
+# are closed and small; ``api`` is deliberately not enumerated -- 31 values on
+# four tools would cost ~1,270 tokens to duplicate what wmt://apis already lists.
+# tests/test_server.py asserts these stay in step with their sources.
+PlatformId = Literal["walmart:ads", "walmart:marketplace", "samsclub:ads"]
+HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 
 tokens = TokenManager()
 
@@ -216,12 +228,10 @@ async def list_endpoints(
         ),
     ] = None,
     platform: Annotated[
-        str | None,
+        PlatformId | None,
         Field(
             default=None,
-            description=(
-                "[Walmart] Limit to one platform — connect, samsclub, or marketplace. Src: apis."
-            ),
+            description="[Walmart] Limit to one platform. Src: apis.",
         ),
     ] = None,
     tag: Annotated[
@@ -232,11 +242,8 @@ async def list_endpoints(
         ),
     ] = None,
     method: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="[Walmart] Filter by HTTP verb — GET, POST, PUT, PATCH, or DELETE.",
-        ),
+        HttpMethod | None,
+        Field(default=None, description="[Walmart] Filter by HTTP verb."),
     ] = None,
 ) -> dict[str, Any]:
     try:
@@ -264,8 +271,8 @@ async def describe_endpoint(
         Field(
             description=(
                 "[Walmart] Operation id, qualified as api:operationId (e.g. "
-                "marketplace:order-management:getAllOrders) or bare when unambiguous. "
-                "Src: operations."
+                "walmart:marketplace:order-management:getAllOrders) or bare when "
+                "unambiguous. Src: operations."
             )
         ),
     ],
@@ -350,7 +357,8 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] Operation id, qualified as api:operationId or bare when "
+                "[Walmart] Operation id, qualified as api:operationId (e.g. "
+                "walmart:ads:sponsored-products:SBAProfileUpdateV2) or bare when "
                 "unambiguous. Resolves the api, platform, method, path, and required "
                 "headers. Src: operations."
             ),
@@ -361,19 +369,17 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] Api to call, e.g. marketplace:order-management. Required with "
-                "raw method+path; otherwise inferred from operation_id. Src: apis."
+                "[Walmart] Api to call, e.g. walmart:marketplace:order-management. "
+                "Required with raw method+path; otherwise inferred from operation_id. "
+                "Src: apis."
             ),
         ),
     ] = None,
     method: Annotated[
-        str | None,
+        HttpMethod | None,
         Field(
             default=None,
-            description=(
-                "[Walmart] HTTP method — GET, POST, PUT, PATCH, or DELETE. "
-                "Required unless operation_id is given."
-            ),
+            description="[Walmart] HTTP method. Required unless operation_id is given.",
         ),
     ] = None,
     path: Annotated[
@@ -425,9 +431,9 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] Required on marketplace, where it selects the credential to act "
-                "as. On connect/samsclub it is optional and sent as X-Advertiser-ID, which "
-                "many display/creative/campaign endpoints require. Src: config."
+                "[Walmart] Required on walmart:marketplace, where it selects the credential "
+                "to act as. On the ads platforms it is optional and sent as X-Advertiser-ID, "
+                "which many display/creative/campaign endpoints require. Src: config."
             ),
         ),
     ] = None,
@@ -436,8 +442,8 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] WAP tenant for non-US connect regions, e.g. WMT_CA, WMT_MX, "
-                "WBD_OD. Omit for US and for marketplace. Sent as wap-tenant-id."
+                "[Walmart] WAP tenant for non-US walmart:ads regions, e.g. WMT_CA, WMT_MX, "
+                "WBD_OD. Omit for US and for walmart:marketplace. Sent as wap-tenant-id."
             ),
         ),
     ] = None,
@@ -449,7 +455,7 @@ async def call_endpoint(
     except (SpecError, RequestError) as e:
         return ApiToolResult(error=str(e))
 
-    platform = resolved_api.partition(":")[0]
+    platform = platform_of(resolved_api)
     try:
         cfg = config().env(platform, region, environment)
     except ConfigError as e:
@@ -533,13 +539,12 @@ async def download_file(
         ),
     ],
     platform: Annotated[
-        str | None,
+        PlatformId | None,
         Field(
             default=None,
             description=(
-                "[Walmart] Platform to authenticate as — connect, samsclub, or marketplace. "
-                "Required with a bare url; otherwise inferred from operation_id or api. "
-                "Src: apis."
+                "[Walmart] Platform to authenticate as. Required with a bare url; "
+                "otherwise inferred from operation_id or api. Src: apis."
             ),
         ),
     ] = None,
@@ -568,7 +573,7 @@ async def download_file(
         ),
     ] = None,
     method: Annotated[
-        str | None,
+        HttpMethod | None,
         Field(default=None, description="[Walmart] HTTP method when using path. Defaults to GET."),
     ] = None,
     path: Annotated[
@@ -598,8 +603,8 @@ async def download_file(
         Field(
             default=None,
             description=(
-                "[Walmart] Required on marketplace (selects the credential) and by display "
-                "snapshot downloads, where it is sent as X-Advertiser-ID and as the "
+                "[Walmart] Required on walmart:marketplace (selects the credential) and by "
+                "display snapshot downloads, where it is sent as X-Advertiser-ID and as the "
                 "advertiserId query parameter. Src: config."
             ),
         ),
@@ -608,7 +613,9 @@ async def download_file(
         str | None,
         Field(
             default=None,
-            description="[Walmart] WAP tenant for non-US connect regions. Sent as wap-tenant-id.",
+            description=(
+                "[Walmart] WAP tenant for non-US walmart:ads regions. Sent as wap-tenant-id."
+            ),
         ),
     ] = None,
 ) -> DownloadToolResult:
@@ -632,7 +639,7 @@ async def download_file(
         )
 
     if resolved_api is not None:
-        platform = resolved_api.partition(":")[0]
+        platform = platform_of(resolved_api)  # type: ignore[assignment]
     if platform is None:
         return DownloadToolResult(
             error=(
@@ -743,8 +750,9 @@ async def refresh_specs(
         Field(
             default=None,
             description=(
-                "[Walmart] Refresh only this api, e.g. marketplace:order-management or "
-                "connect:search. Omit to refresh all. Src: apis."
+                "[Walmart] Refresh only this api, e.g. walmart:marketplace:order-management "
+                "or walmart:ads:sponsored-products. Includes the two auxiliary walmart:ads "
+                "specs. Omit to refresh all 33. Src: apis."
             ),
         ),
     ] = None,

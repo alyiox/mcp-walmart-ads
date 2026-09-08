@@ -42,12 +42,12 @@ def test_non_string_keys_are_simply_absent():
 
 def test_all_three_platforms_load(config_file: Path):
     cfg = load_config(config_file)
-    assert set(cfg.platforms.keys()) == {"connect", "samsclub", "marketplace"}
+    assert set(cfg.platforms.keys()) == {"walmart:ads", "samsclub:ads", "walmart:marketplace"}
     assert cfg.platform_errors == {}
 
 
 def test_signature_platform_resolves_key_material_and_hosts(config_file: Path):
-    env = load_config(config_file).env("connect", "us", "production")
+    env = load_config(config_file).env("walmart:ads", "us", "production")
     assert isinstance(env, SignatureEnv)
     assert env.consumer_id == "connect-consumer"
     assert env.bearer_token == "connect-bearer"
@@ -56,37 +56,37 @@ def test_signature_platform_resolves_key_material_and_hosts(config_file: Path):
 
 
 def test_base_url_keys_accept_bare_or_qualified_api_names(config_file: Path):
-    env = load_config(config_file).env("connect", "us", "production")
+    env = load_config(config_file).env("walmart:ads", "us", "production")
     assert isinstance(env, SignatureEnv)
     assert env.base_urls == {
-        "connect:search": "https://advertising.walmart.com",
-        "connect:display": "https://api.dsp.walmart.com",
+        "walmart:ads:sponsored-products": "https://advertising.walmart.com",
+        "walmart:ads:display": "https://api.dsp.walmart.com",
     }
 
 
 def test_qualified_base_url_keys_round_trip(write_config):
     data = raw_config()
-    data["platforms"]["connect"]["regions"]["us"]["production"]["base_urls"] = {
-        "connect:search": "https://a.test",
-        "connect:display": "https://b.test",
+    data["platforms"]["walmart:ads"]["regions"]["us"]["production"]["base_urls"] = {
+        "walmart:ads:sponsored-products": "https://a.test",
+        "walmart:ads:display": "https://b.test",
     }
-    env = load_config(write_config(data)).env("connect", "us", "production")
+    env = load_config(write_config(data)).env("walmart:ads", "us", "production")
     assert isinstance(env, SignatureEnv)
-    assert set(env.base_urls) == {"connect:search", "connect:display"}
+    assert set(env.base_urls) == {"walmart:ads:sponsored-products", "walmart:ads:display"}
 
 
 def test_an_auxiliary_api_may_also_carry_a_base_url(write_config):
     data = raw_config()
-    data["platforms"]["connect"]["regions"]["us"]["production"]["base_urls"][
-        "connect:conversion-rest-api"
+    data["platforms"]["walmart:ads"]["regions"]["us"]["production"]["base_urls"][
+        "walmart:ads:conversions"
     ] = "https://c.test"
-    env = load_config(write_config(data)).env("connect", "us", "production")
+    env = load_config(write_config(data)).env("walmart:ads", "us", "production")
     assert isinstance(env, SignatureEnv)
-    assert env.base_urls["connect:conversion-rest-api"] == "https://c.test"
+    assert env.base_urls["walmart:ads:conversions"] == "https://c.test"
 
 
 def test_oauth2_platform_indexes_advertisers_by_credential(config_file: Path):
-    env = load_config(config_file).env("marketplace", "us", "production")
+    env = load_config(config_file).env("walmart:marketplace", "us", "production")
     assert isinstance(env, OAuth2Env)
     assert env.advertisers == (7060158, 7060159)
     assert env.credential_for(7060158).client_id == "cid-1"
@@ -97,19 +97,19 @@ def test_oauth2_platform_indexes_advertisers_by_credential(config_file: Path):
 
 def test_region_and_environment_lookup_is_case_insensitive(config_file: Path):
     cfg = load_config(config_file)
-    assert cfg.env("CONNECT", "US", "production") is cfg.env("connect", "us", "production")
+    assert cfg.env("WALMART:ADS", "US", "production") is cfg.env("walmart:ads", "us", "production")
 
 
 def test_relative_private_key_path_resolves_against_the_config_dir(config_file: Path):
-    env = load_config(config_file).env("samsclub", "us", "production")
+    env = load_config(config_file).env("samsclub:ads", "us", "production")
     assert isinstance(env, SignatureEnv)
     assert env.private_key_pem
 
 
 def test_absolute_private_key_path_is_used_as_given(write_config, key_file: Path):
     data = raw_config()
-    data["platforms"]["samsclub"]["regions"]["us"]["production"]["private_key"] = str(key_file)
-    env = load_config(write_config(data)).env("samsclub", "us", "production")
+    data["platforms"]["samsclub:ads"]["regions"]["us"]["production"]["private_key"] = str(key_file)
+    env = load_config(write_config(data)).env("samsclub:ads", "us", "production")
     assert isinstance(env, SignatureEnv)
     assert env.private_key_pem
 
@@ -175,12 +175,15 @@ def test_bad_threshold_fails_the_file(write_config):
 
 def test_a_broken_platform_does_not_stop_the_others(write_config):
     data = raw_config()
-    data["platforms"]["marketplace"]["regions"]["us"]["production"]["credentials"][0].pop(
+    data["platforms"]["walmart:marketplace"]["regions"]["us"]["production"]["credentials"][0].pop(
         "client_secret"
     )
     cfg = load_config(write_config(data))
-    assert "marketplace" in cfg.platform_errors
-    for platform, consumer_id in (("connect", "connect-consumer"), ("samsclub", "sams-consumer")):
+    assert "walmart:marketplace" in cfg.platform_errors
+    for platform, consumer_id in (
+        ("walmart:ads", "connect-consumer"),
+        ("samsclub:ads", "sams-consumer"),
+    ):
         env = cfg.env(platform, "us", "production")
         assert isinstance(env, SignatureEnv)
         assert env.consumer_id == consumer_id
@@ -188,109 +191,111 @@ def test_a_broken_platform_does_not_stop_the_others(write_config):
 
 def test_a_broken_platform_fails_only_when_used(write_config):
     data = raw_config()
-    data["platforms"]["connect"]["regions"]["us"]["production"].pop("bearer_token")
+    data["platforms"]["walmart:ads"]["regions"]["us"]["production"].pop("bearer_token")
     cfg = load_config(write_config(data))
     with pytest.raises(ConfigError) as excinfo:
-        cfg.env("connect", "us", "production")
+        cfg.env("walmart:ads", "us", "production")
     assert "bearer_token" in str(excinfo.value)
-    assert cfg.env("marketplace", "us", "production")
+    assert cfg.env("walmart:marketplace", "us", "production")
 
 
 def test_every_error_for_a_platform_is_reported_together(write_config):
     data = raw_config()
-    env = data["platforms"]["marketplace"]["regions"]["us"]["production"]
+    env = data["platforms"]["walmart:marketplace"]["regions"]["us"]["production"]
     env["credentials"][0].pop("client_secret")
     env["credentials"].append(
         {"client_id": "dup", "client_secret": "x", "advertisers": [{"id": 7060159}]}
     )
-    data["platforms"]["marketplace"]["regions"]["us"]["staging"] = {"credentials": []}
-    errors = load_config(write_config(data)).platform_errors["marketplace"]
+    data["platforms"]["walmart:marketplace"]["regions"]["us"]["staging"] = {"credentials": []}
+    errors = load_config(write_config(data)).platform_errors["walmart:marketplace"]
     assert any("client_secret" in e for e in errors)
     assert any("unknown environment" in e for e in errors)
 
 
 def test_signature_platform_reports_every_missing_field_at_once(write_config):
     data = raw_config()
-    data["platforms"]["connect"]["regions"]["us"]["production"] = {"base_urls": {}}
-    errors = load_config(write_config(data)).platform_errors["connect"]
+    data["platforms"]["walmart:ads"]["regions"]["us"]["production"] = {"base_urls": {}}
+    errors = load_config(write_config(data)).platform_errors["walmart:ads"]
     joined = "\n".join(errors)
-    for field in ("consumer_id", "private_key", "bearer_token", "search", "display"):
+    for field in ("consumer_id", "private_key", "bearer_token", "sponsored-products", "display"):
         assert field in joined
 
 
 def test_an_unreadable_private_key_is_reported_not_raised(write_config):
     data = raw_config()
-    data["platforms"]["connect"]["regions"]["us"]["production"]["private_key"] = "absent.pem"
+    data["platforms"]["walmart:ads"]["regions"]["us"]["production"]["private_key"] = "absent.pem"
     cfg = load_config(write_config(data))
-    assert any("cannot read" in e for e in cfg.platform_errors["connect"])
+    assert any("cannot read" in e for e in cfg.platform_errors["walmart:ads"])
 
 
 def test_a_missing_surface_api_base_url_is_reported(write_config):
     data = raw_config()
-    data["platforms"]["connect"]["regions"]["us"]["production"]["base_urls"] = {
+    data["platforms"]["walmart:ads"]["regions"]["us"]["production"]["base_urls"] = {
         "search": "https://a.test"
     }
-    errors = load_config(write_config(data)).platform_errors["connect"]
+    errors = load_config(write_config(data)).platform_errors["walmart:ads"]
     assert any("base_urls.display: required" in e for e in errors)
 
 
 def test_an_unknown_base_url_api_is_reported(write_config):
     data = raw_config()
-    data["platforms"]["connect"]["regions"]["us"]["production"]["base_urls"]["nope"] = "https://x"
-    errors = load_config(write_config(data)).platform_errors["connect"]
+    data["platforms"]["walmart:ads"]["regions"]["us"]["production"]["base_urls"]["nope"] = (
+        "https://x"
+    )
+    errors = load_config(write_config(data)).platform_errors["walmart:ads"]
     assert any("unknown api" in e for e in errors)
 
 
 def test_unknown_environment_for_a_closed_platform_is_reported(write_config):
     data = raw_config()
-    data["platforms"]["marketplace"]["regions"]["us"]["staging"] = {"credentials": []}
-    errors = load_config(write_config(data)).platform_errors["marketplace"]
+    data["platforms"]["walmart:marketplace"]["regions"]["us"]["staging"] = {"credentials": []}
+    errors = load_config(write_config(data)).platform_errors["walmart:marketplace"]
     assert any("unknown environment" in e for e in errors)
 
 
 def test_an_open_platform_accepts_any_environment_name(write_config):
     data = raw_config()
-    data["platforms"]["connect"]["regions"]["us"]["staging"] = data["platforms"]["connect"][
+    data["platforms"]["walmart:ads"]["regions"]["us"]["staging"] = data["platforms"]["walmart:ads"][
         "regions"
     ]["us"]["production"]
     cfg = load_config(write_config(data))
     assert cfg.platform_errors == {}
-    assert cfg.env("connect", "us", "staging")
+    assert cfg.env("walmart:ads", "us", "staging")
 
 
 def test_two_credentials_claiming_one_advertiser_is_reported(write_config):
     data = raw_config()
-    data["platforms"]["marketplace"]["regions"]["us"]["production"]["credentials"].append(
+    data["platforms"]["walmart:marketplace"]["regions"]["us"]["production"]["credentials"].append(
         {"client_id": "cid-2", "client_secret": "s", "advertisers": [{"id": 7060158}]}
     )
-    errors = load_config(write_config(data)).platform_errors["marketplace"]
+    errors = load_config(write_config(data)).platform_errors["walmart:marketplace"]
     assert any("claimed by two credentials" in e for e in errors)
 
 
 def test_a_bare_advertiser_id_is_rejected(write_config):
     data = raw_config()
-    data["platforms"]["marketplace"]["regions"]["us"]["production"]["credentials"][0][
+    data["platforms"]["walmart:marketplace"]["regions"]["us"]["production"]["credentials"][0][
         "advertisers"
     ] = [7060158]
-    errors = load_config(write_config(data)).platform_errors["marketplace"]
+    errors = load_config(write_config(data)).platform_errors["walmart:marketplace"]
     assert any("must be an object" in e for e in errors)
 
 
 def test_advertiser_rejects_unknown_fields(write_config):
     data = raw_config()
-    data["platforms"]["marketplace"]["regions"]["us"]["production"]["credentials"][0][
+    data["platforms"]["walmart:marketplace"]["regions"]["us"]["production"]["credentials"][0][
         "advertisers"
     ] = [{"id": 1, "nickname": "x"}]
-    errors = load_config(write_config(data)).platform_errors["marketplace"]
+    errors = load_config(write_config(data)).platform_errors["walmart:marketplace"]
     assert any("unknown field" in e for e in errors)
 
 
 def test_an_environment_with_no_credentials_loads_and_fails_at_call_time(write_config):
     data = raw_config()
-    data["platforms"]["marketplace"]["regions"]["us"]["production"] = {}
+    data["platforms"]["walmart:marketplace"]["regions"]["us"]["production"] = {}
     cfg = load_config(write_config(data))
     assert cfg.platform_errors == {}
-    env = cfg.env("marketplace", "us", "production")
+    env = cfg.env("walmart:marketplace", "us", "production")
     assert isinstance(env, OAuth2Env)
     with pytest.raises(ConfigError) as excinfo:
         env.credential_for(7060158)
@@ -303,25 +308,51 @@ def test_an_environment_with_no_credentials_loads_and_fails_at_call_time(write_c
 def test_unconfigured_platform_region_and_environment_each_name_alternatives(config_file: Path):
     cfg = load_config(config_file)
     with pytest.raises(ConfigError) as excinfo:
-        cfg.env("marketplace", "eu", "production")
+        cfg.env("walmart:marketplace", "eu", "production")
     assert "us" in str(excinfo.value)
     with pytest.raises(ConfigError) as excinfo:
-        cfg.env("marketplace", "us", "sandbox2")
+        cfg.env("walmart:marketplace", "us", "sandbox2")
     assert "production" in str(excinfo.value)
 
 
 def test_a_platform_absent_from_the_file_is_reported_as_unconfigured(write_config):
     data = raw_config()
-    del data["platforms"]["samsclub"]
+    del data["platforms"]["samsclub:ads"]
     cfg = load_config(write_config(data))
     with pytest.raises(ConfigError) as excinfo:
-        cfg.env("samsclub", "us", "production")
+        cfg.env("samsclub:ads", "us", "production")
     assert "not configured" in str(excinfo.value)
 
 
 def test_unknown_advertiser_names_the_configured_ids(config_file: Path):
-    env = load_config(config_file).env("marketplace", "us", "production")
+    env = load_config(config_file).env("walmart:marketplace", "us", "production")
     assert isinstance(env, OAuth2Env)
     with pytest.raises(ConfigError) as excinfo:
         env.credential_for(999)
     assert "7060158" in str(excinfo.value)
+
+
+# ── migration hints ───────────────────────────────────────────────────────────
+
+
+def test_the_pre_0_2_config_shape_is_named_explicitly(tmp_path: Path):
+    path = tmp_path / "c.json"
+    path.write_text(json.dumps({"regions": {"US": {"production": {"consumer_id": "x"}}}}))
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(path)
+    message = str(excinfo.value)
+    assert "pre-0.2 shape" in message
+    assert "walmart:ads" in message
+
+
+def test_a_legacy_platform_key_is_told_its_new_name(write_config):
+    for legacy, current in (
+        ("connect", "walmart:ads"),
+        ("samsclub", "samsclub:ads"),
+        ("marketplace", "walmart:marketplace"),
+    ):
+        data = raw_config()
+        data["platforms"][legacy] = data["platforms"].pop(current)
+        with pytest.raises(ConfigError) as excinfo:
+            load_config(write_config(data))
+        assert f"renamed to {current!r}" in str(excinfo.value)

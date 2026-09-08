@@ -92,7 +92,8 @@ def token_url(platform: str, environment: str) -> str:
     """Token endpoint for a platform's environment.
 
     Always the bare environment host -- the ``/v1`` suffix that
-    ``marketplace:simulations-api`` declares applies to its own operations, not
+    ``walmart:marketplace:simulations-api`` declares applies to its own operations,
+    not
     to auth.
     """
     base_urls = platform_for(platform).base_urls

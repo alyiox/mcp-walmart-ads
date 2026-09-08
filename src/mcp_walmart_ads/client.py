@@ -3,11 +3,11 @@
 One request path serves both auth models; :func:`auth_headers` is the only place
 they diverge. What each platform sends:
 
-* **signature** (Walmart Connect, Sam's Club) -- the four ``WM_CONSUMER.*`` /
+* **signature** (``walmart:ads``, ``samsclub:ads``) -- the four ``WM_CONSUMER.*`` /
   ``WM_SEC.*`` signature headers, a long-lived ``Authorization: Bearer``, and the
   optional ``X-Advertiser-ID`` and ``wap-tenant-id`` an agent supplies. A 401 is
   terminal: nothing is cached, so a retry would send the same credential.
-* **oauth2** (Marketplace) -- ``WM_SEC.ACCESS_TOKEN``, plus ``WM_MARKET`` and
+* **oauth2** (``walmart:marketplace``) -- ``WM_SEC.ACCESS_TOKEN``, plus ``WM_MARKET`` and
   ``WM_GLOBAL_VERSION`` read from the operation's own declaration, and
   ``WM_SANDBOX`` when the target host is the sandbox. A 401 is retried once with
   a force-refreshed token, since Walmart can invalidate a token we still
@@ -92,7 +92,7 @@ class DownloadResponse:
 def resolve_path(path: str, path_params: dict[str, Any] | None) -> tuple[str, dict[str, Any]]:
     """Substitute ``{placeholders}`` and split any query string baked into a path.
 
-    One spec (``marketplace:walmart-plus``) keys a path as
+    One spec (``walmart:marketplace:walmart-plus``) keys a path as
     ``/v3/feeds?feedType=…&requestType=…``, so the query has to be lifted out
     before the URL is joined.
     """

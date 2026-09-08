@@ -4,22 +4,26 @@ Shape (``~/.config/mcp-walmart-ads/config.json``)::
 
     platforms.<platform>.regions.<region>.<environment> = <auth block>
 
-The auth block's shape is decided by the platform's auth model (see
-:mod:`.platforms`), not by a tag in the file -- there is exactly one shape per
-platform, so a discriminator would only be a chance to disagree with itself:
+``<platform>`` is the two-segment prefix an api id starts with -- ``walmart:ads``,
+``walmart:marketplace``, ``samsclub:ads`` -- so a config key is literally the
+value passed as the ``platform`` tool parameter, with nothing to translate.
 
-* **signature** platforms (``connect``, ``samsclub``)::
+The auth block's shape is decided by the platform's auth model (see
+:mod:`.platforms`), not by a tag in the file: there is exactly one shape per
+platform, so a discriminator would only be a chance to disagree with itself.
+
+* **signature** platforms (``walmart:ads``, ``samsclub:ads``)::
 
       {consumer_id, private_key, private_key_version?, bearer_token,
        base_urls: {<api>: <url>}}
 
-  ``base_urls`` is keyed by api, bare (``search``) or qualified
-  (``connect:search``); Walmart hands different tenants different hosts, so
-  these cannot be fixed by the server. One is required per api in the platform's
-  discovery surface; extra keys are allowed for the auxiliary specs an agent
-  reaches by raw method+path.
+  ``base_urls`` is keyed by api, either bare (``sponsored-products``) or fully
+  qualified (``walmart:ads:sponsored-products``); Walmart hands different tenants
+  different hosts, so these cannot be fixed by the server. One is required per api
+  in the platform's discovery surface; extra keys are allowed for the auxiliary
+  specs an agent reaches by raw method+path.
 
-* **oauth2** platforms (``marketplace``)::
+* **oauth2** platforms (``walmart:marketplace``)::
 
       {credentials: [{client_id, client_secret,
                       advertisers: [{id, partner_id?}]}]}
@@ -30,15 +34,15 @@ platform, so a discriminator would only be a chance to disagree with itself:
   operations require it as ``WM_PARTNER_ID``. Base URLs are fixed by the server
   and absent from the file.
 
-Regions are a namespace, not a route. For ``marketplace`` every region reaches
-the same fixed hosts; the level exists because advertiser ids are only unique
-within a region.
+Regions are a namespace, not a route. For ``walmart:marketplace`` every region
+reaches the same fixed hosts; the level exists because advertiser ids are only
+unique within a region.
 
-**Validation errors are isolated per platform.** A malformed ``marketplace``
-block does not stop ``connect`` from loading, and discovery -- which never
-touches credentials at all -- keeps working with a config that is broken
-everywhere. Only a file that is missing, unparseable, or has no ``platforms``
-object at all fails outright.
+**Validation errors are isolated per platform.** A malformed
+``walmart:marketplace`` block does not stop ``walmart:ads`` from loading, and
+discovery -- which never touches credentials at all -- keeps working with a
+config that is broken everywhere. Only a file that is missing, unparseable, or
+has no ``platforms`` object at all fails outright.
 """
 
 from __future__ import annotations
@@ -148,7 +152,7 @@ class OAuth2Env:
         credential = self.by_advertiser.get(advertiser_id)
         if credential is not None:
             return credential
-        where = f"platforms.{self.platform}.regions.{self.region}.{self.environment}"
+        where = _where(self.platform, "regions", self.region, self.environment)
         if not self.by_advertiser:
             raise ConfigError(f"no credentials configured for {where}")
         known = ", ".join(str(a) for a in self.advertisers)
@@ -217,13 +221,38 @@ class Config:
 # ── loading ───────────────────────────────────────────────────────────────────
 
 
+# Platform ids as they were spelled before 0.2, so a stale config gets told what
+# to rename rather than that its platform does not exist.
+_LEGACY_PLATFORMS: dict[str, str] = {
+    "connect": "walmart:ads",
+    "samsclub": "samsclub:ads",
+    "marketplace": "walmart:marketplace",
+}
+
+
+def _where(platform: str, *parts: str) -> str:
+    """An error path naming a config location.
+
+    The platform id carries a colon, so it is quoted the way it appears in the
+    JSON file -- ``platforms."walmart:ads".regions.US.production``.
+    """
+    return ".".join((f'platforms."{platform}"', *parts))
+
+
 def _surface_apis(platform: str) -> tuple[str, ...]:
     return tuple(m.spec_id for m in SPECS if m.platform == platform and m.in_surface)
 
 
 def _normalize_api_key(key: str, platform: str) -> str:
-    """Accept ``search`` or ``connect:search`` for a base_urls key."""
-    return key if ":" in key else f"{platform}:{key}"
+    """Accept a bare name or a fully qualified api id for a base_urls key.
+
+    Under ``walmart:ads``, both ``sponsored-products`` and
+    ``walmart:ads:sponsored-products`` resolve to the same api. Anything else
+    falls through as an unknown api rather than being silently reinterpreted.
+    """
+    if key.startswith(f"{platform}:"):
+        return key
+    return f"{platform}:{key}"
 
 
 def _load_advertiser(raw: Any, *, where: str, errors: list[str]) -> Advertiser | None:
@@ -295,7 +324,7 @@ def _load_credential(raw: Any, *, where: str, errors: list[str]) -> Credential |
 def _load_oauth2_env(
     raw: Any, *, platform: str, region: str, environment: str, errors: list[str]
 ) -> OAuth2Env:
-    where = f"platforms.{platform}.regions.{region}.{environment}"
+    where = _where(platform, "regions", region, environment)
     if not isinstance(raw, dict):
         errors.append(f"{where}: must be an object")
         raw = {}
@@ -354,7 +383,7 @@ def _load_signature_env(
     config_dir: Path,
     errors: list[str],
 ) -> SignatureEnv | None:
-    where = f"platforms.{platform}.regions.{region}.{environment}"
+    where = _where(platform, "regions", region, environment)
     if not isinstance(raw, dict):
         errors.append(f"{where}: must be an object")
         return None
@@ -381,7 +410,7 @@ def _load_signature_env(
                 base_urls[api] = value
             for api in _surface_apis(platform):
                 if api not in base_urls:
-                    local.append(f"{where}.base_urls.{api.partition(':')[2]}: required")
+                    local.append(f"{where}.base_urls.{api.split(':', 2)[2]}: required")
 
     pem = ""
     raw_key = raw.get("private_key")
@@ -429,28 +458,28 @@ def _load_platform(
     meta = platform_for(platform)
 
     if not isinstance(raw, dict):
-        errors.append(f"platforms.{platform}: must be an object")
+        errors.append(f"{_where(platform)}: must be an object")
         return regions
 
     raw_regions = raw.get("regions")
     if not isinstance(raw_regions, dict) or not raw_regions:
-        errors.append(f"platforms.{platform}.regions: required, must be a non-empty object")
+        errors.append(f"{_where(platform, 'regions')}: required, must be a non-empty object")
         return regions
 
     unknown = set(raw) - {"regions"}
     if unknown:
-        errors.append(f"platforms.{platform}: unknown field(s) {', '.join(sorted(unknown))}")
+        errors.append(f"{_where(platform)}: unknown field(s) {', '.join(sorted(unknown))}")
 
     for region, raw_envs in raw_regions.items():
         region_envs: CaseInsensitiveDict[EnvConfig] = CaseInsensitiveDict()
         regions[region] = region_envs
         if not isinstance(raw_envs, dict) or not raw_envs:
-            errors.append(f"platforms.{platform}.regions.{region}: must be a non-empty object")
+            errors.append(f"{_where(platform, 'regions', region)}: must be a non-empty object")
             continue
         for environment, raw_env in raw_envs.items():
             if meta.environments is not None and environment not in meta.environments:
                 errors.append(
-                    f"platforms.{platform}.regions.{region}.{environment}: unknown environment "
+                    f"{_where(platform, 'regions', region, environment)}: unknown environment "
                     f"(expected one of {', '.join(meta.environments)})"
                 )
                 continue
@@ -498,6 +527,15 @@ def load_config(path: Path | None = None) -> Config:
 
     raw_platforms = raw.get("platforms")
     if not isinstance(raw_platforms, dict) or not raw_platforms:
+        if isinstance(raw.get("regions"), dict):
+            # The pre-0.2 single-platform shape. Say so, rather than reporting a
+            # missing key the reader has never heard of.
+            raise ConfigError(
+                f"Config file at {path} uses the pre-0.2 shape (top-level 'regions'). "
+                "Nest it under a platform: "
+                '{"platforms": {"walmart:ads": {"regions": …}}} — one of '
+                f"{', '.join(PLATFORM_IDS)}. See config.example.json."
+            )
         raise ConfigError("platforms: required, must be a non-empty object")
 
     top_errors: list[str] = []
@@ -507,10 +545,13 @@ def load_config(path: Path | None = None) -> Config:
 
     for platform, raw_platform in raw_platforms.items():
         if platform not in PLATFORM_IDS:
-            top_errors.append(
-                f"platforms.{platform}: unknown platform "
-                f"(expected one of {', '.join(PLATFORM_IDS)})"
+            hint = _LEGACY_PLATFORMS.get(platform)
+            detail = (
+                f"renamed to {hint!r} in 0.2"
+                if hint
+                else f"expected one of {', '.join(PLATFORM_IDS)}"
             )
+            top_errors.append(f"{_where(platform)}: unknown platform ({detail})")
             continue
         errors: list[str] = []
         platforms[platform] = _load_platform(

@@ -21,7 +21,9 @@ from mcp_walmart_ads.config import OAuth2Env, SignatureEnv
 from mcp_walmart_ads.discovery import Operation
 
 
-def _operation(raw: dict[str, Any], *, api: str = "marketplace:order-management") -> Operation:
+def _operation(
+    raw: dict[str, Any], *, api: str = "walmart:marketplace:order-management"
+) -> Operation:
     return Operation(
         operation_id="Op", api=api, method="get", path="/v3/orders", summary="", tags=(), raw=raw
     )
@@ -129,7 +131,7 @@ async def test_an_operation_requiring_partner_id_fails_when_the_seller_has_none(
 
 @pytest.mark.asyncio
 async def test_signature_platform_sends_the_signature_set_and_bearer(signature_env: SignatureEnv):
-    headers = await client.auth_headers(signature_env, api="connect:search")
+    headers = await client.auth_headers(signature_env, api="walmart:ads:sponsored-products")
     assert headers["WM_CONSUMER.ID"] == "connect-consumer"
     assert headers["Authorization"] == "Bearer connect-bearer"
     assert headers["WM_SEC.KEY_VERSION"] == "1"
@@ -143,7 +145,7 @@ async def test_advertiser_and_tenant_are_headers_on_a_signature_platform(
     signature_env: SignatureEnv,
 ):
     headers = await client.auth_headers(
-        signature_env, api="connect:display", advertiser_id=99, tenant="WMT_CA"
+        signature_env, api="walmart:ads:display", advertiser_id=99, tenant="WMT_CA"
     )
     assert headers["X-Advertiser-ID"] == "99"
     assert headers["wap-tenant-id"] == "WMT_CA"
@@ -151,15 +153,15 @@ async def test_advertiser_and_tenant_are_headers_on_a_signature_platform(
 
 @pytest.mark.asyncio
 async def test_advertiser_and_tenant_are_omitted_by_default(signature_env: SignatureEnv):
-    headers = await client.auth_headers(signature_env, api="connect:search")
+    headers = await client.auth_headers(signature_env, api="walmart:ads:sponsored-products")
     assert "X-Advertiser-ID" not in headers
     assert "wap-tenant-id" not in headers
 
 
 @pytest.mark.asyncio
 async def test_correlation_id_is_always_present_and_unique(signature_env: SignatureEnv):
-    first = await client.auth_headers(signature_env, api="connect:search")
-    second = await client.auth_headers(signature_env, api="connect:search")
+    first = await client.auth_headers(signature_env, api="walmart:ads:sponsored-products")
+    second = await client.auth_headers(signature_env, api="walmart:ads:sponsored-products")
     assert first["WM_QOS.CORRELATION_ID"] != second["WM_QOS.CORRELATION_ID"]
 
 
@@ -170,7 +172,7 @@ async def test_oauth2_platform_sends_the_access_token_not_a_client_secret(
     _transport(monkeypatch, _ok())
     headers = await client.auth_headers(
         oauth2_env,
-        api="marketplace:order-management",
+        api="walmart:marketplace:order-management",
         tokens=TokenManager(),
         advertiser_id=7060158,
     )
@@ -211,7 +213,7 @@ async def test_global_version_is_omitted_when_the_operation_does_not_declare_it(
     _transport(monkeypatch, _ok())
     headers = await client.auth_headers(
         oauth2_env,
-        api="marketplace:order-management",
+        api="walmart:marketplace:order-management",
         operation=_operation({}),
         tokens=TokenManager(),
         advertiser_id=7060158,
@@ -227,7 +229,7 @@ async def test_partner_id_is_sent_when_the_seller_has_one(
     _transport(monkeypatch, _ok())
     headers = await client.auth_headers(
         oauth2_env,
-        api="marketplace:payments",
+        api="walmart:marketplace:payments",
         tokens=TokenManager(),
         advertiser_id=7060158,
     )
@@ -240,7 +242,7 @@ async def test_sandbox_header_is_sent_on_the_sandbox_environment(
 ):
     _transport(monkeypatch, _ok())
     env = OAuth2Env(
-        platform="marketplace",
+        platform="walmart:marketplace",
         region="us",
         environment="sandbox",
         credentials=(credential,),
@@ -248,7 +250,10 @@ async def test_sandbox_header_is_sent_on_the_sandbox_environment(
         advertiser_records={},
     )
     headers = await client.auth_headers(
-        env, api="marketplace:order-management", tokens=TokenManager(), advertiser_id=7060158
+        env,
+        api="walmart:marketplace:order-management",
+        tokens=TokenManager(),
+        advertiser_id=7060158,
     )
     assert headers["WM_SANDBOX"] == "v2"
 
@@ -257,7 +262,7 @@ async def test_sandbox_header_is_sent_on_the_sandbox_environment(
 async def test_an_oauth2_platform_without_an_advertiser_id_is_an_error(oauth2_env: OAuth2Env):
     with pytest.raises(RequestError) as excinfo:
         await client.auth_headers(
-            oauth2_env, api="marketplace:order-management", tokens=TokenManager()
+            oauth2_env, api="walmart:marketplace:order-management", tokens=TokenManager()
         )
     assert "advertiser_id" in str(excinfo.value)
 
@@ -302,7 +307,10 @@ async def test_a_signature_call_targets_the_configured_base_url(
 ):
     seen = _transport(monkeypatch, _ok())
     await client.execute_request(
-        cfg=signature_env, api="connect:search", method="get", path="/api/v1/campaigns"
+        cfg=signature_env,
+        api="walmart:ads:sponsored-products",
+        method="get",
+        path="/api/v1/campaigns",
     )
     assert str(seen[0].url) == "https://advertising.walmart.com/api/v1/campaigns"
 
@@ -314,7 +322,7 @@ async def test_a_marketplace_call_targets_the_fixed_host(
     seen = _transport(monkeypatch, _ok())
     await client.execute_request(
         cfg=oauth2_env,
-        api="marketplace:order-management",
+        api="walmart:marketplace:order-management",
         method="get",
         path="/v3/orders",
         advertiser_id=7060158,
@@ -330,7 +338,7 @@ async def test_baked_and_explicit_query_params_are_merged(
     seen = _transport(monkeypatch, _ok())
     await client.execute_request(
         cfg=signature_env,
-        api="connect:search",
+        api="walmart:ads:sponsored-products",
         method="get",
         path="/api/v1/x?baked=1",
         params={"explicit": "2"},
@@ -347,7 +355,7 @@ async def test_a_non_json_response_body_is_returned_as_text(
 
     _transport(monkeypatch, handler)
     response = await client.execute_request(
-        cfg=signature_env, api="connect:search", method="get", path="/x"
+        cfg=signature_env, api="walmart:ads:sponsored-products", method="get", path="/x"
     )
     assert response.body == "not json"
 
@@ -370,7 +378,7 @@ async def test_a_401_is_retried_once_with_a_fresh_token_on_marketplace(
     _transport(monkeypatch, handler)
     response = await client.execute_request(
         cfg=oauth2_env,
-        api="marketplace:order-management",
+        api="walmart:marketplace:order-management",
         method="get",
         path="/v3/orders",
         advertiser_id=7060158,
@@ -389,7 +397,7 @@ async def test_a_401_is_not_retried_on_a_signature_platform(
 
     seen = _transport(monkeypatch, handler)
     response = await client.execute_request(
-        cfg=signature_env, api="connect:search", method="get", path="/x"
+        cfg=signature_env, api="walmart:ads:sponsored-products", method="get", path="/x"
     )
     assert response.status_code == 401
     assert len(seen) == 1
@@ -404,7 +412,7 @@ async def test_a_file_path_switches_the_request_to_multipart(
     seen = _transport(monkeypatch, _ok())
     await client.execute_request(
         cfg=oauth2_env,
-        api="marketplace:feed-management",
+        api="walmart:marketplace:feed-management",
         method="post",
         path="/v3/feeds",
         params={"feedType": "MP_ITEM"},
@@ -426,7 +434,7 @@ async def test_an_unreadable_upload_file_is_an_error(
     with pytest.raises(RequestError) as excinfo:
         await client.execute_request(
             cfg=oauth2_env,
-            api="marketplace:feed-management",
+            api="walmart:marketplace:feed-management",
             method="post",
             path="/v3/feeds",
             file_path="/nonexistent/feed.json",
@@ -492,7 +500,9 @@ async def test_download_follows_a_redirect_and_records_the_hops(
 
     _transport(monkeypatch, handler)
     response = await client.download(
-        cfg=signature_env, api="connect:search", url="https://advertising.walmart.com/report/1"
+        cfg=signature_env,
+        api="walmart:ads:sponsored-products",
+        url="https://advertising.walmart.com/report/1",
     )
     assert response.status_code == 200
     assert response.content == b"payload"
@@ -509,7 +519,9 @@ async def test_download_stops_after_the_redirect_limit(
 
     seen = _transport(monkeypatch, handler)
     response = await client.download(
-        cfg=signature_env, api="connect:search", url="https://advertising.walmart.com/report/1"
+        cfg=signature_env,
+        api="walmart:ads:sponsored-products",
+        url="https://advertising.walmart.com/report/1",
     )
     assert response.status_code == 302
     assert len(seen) == client._MAX_REDIRECTS + 1

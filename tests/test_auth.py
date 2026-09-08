@@ -64,13 +64,16 @@ def test_basic_auth_header_encodes_id_and_secret(credential: Credential):
 
 
 def test_token_url_is_the_bare_environment_host():
-    assert token_url("marketplace", "production") == "https://marketplace.walmartapis.com/v3/token"
-    assert token_url("marketplace", "sandbox") == "https://sandbox.walmartapis.com/v3/token"
+    assert (
+        token_url("walmart:marketplace", "production")
+        == "https://marketplace.walmartapis.com/v3/token"
+    )
+    assert token_url("walmart:marketplace", "sandbox") == "https://sandbox.walmartapis.com/v3/token"
 
 
 def test_token_url_rejects_a_platform_without_fixed_hosts():
     with pytest.raises(AuthError):
-        token_url("connect", "production")
+        token_url("walmart:ads", "production")
 
 
 def test_token_freshness_respects_the_refresh_margin():
@@ -108,7 +111,7 @@ async def test_fetch_token_sends_basic_auth_and_the_client_credentials_grant(
 ):
     calls: list[httpx.Request] = []
     _patch_transport(monkeypatch, _token_response(calls))
-    token = await auth.fetch_token(credential, "marketplace", "production")
+    token = await auth.fetch_token(credential, "walmart:marketplace", "production")
     assert token.access_token == "tok-1"
     request = calls[0]
     assert str(request.url) == "https://marketplace.walmartapis.com/v3/token"
@@ -123,7 +126,7 @@ async def test_missing_expires_in_falls_back_to_the_documented_lifetime(
 ):
     _patch_transport(monkeypatch, _token_response([], expires_in=None))
     before = time.monotonic()
-    token = await auth.fetch_token(credential, "marketplace", "production")
+    token = await auth.fetch_token(credential, "walmart:marketplace", "production")
     assert token.expires_at >= before + DEFAULT_EXPIRES_IN
 
 
@@ -136,7 +139,7 @@ async def test_non_200_token_response_raises_with_the_body(
 
     _patch_transport(monkeypatch, handler)
     with pytest.raises(AuthError) as excinfo:
-        await auth.fetch_token(credential, "marketplace", "production")
+        await auth.fetch_token(credential, "walmart:marketplace", "production")
     assert "403" in str(excinfo.value)
     assert "forbidden-detail" in str(excinfo.value)
 
@@ -150,7 +153,7 @@ async def test_token_response_without_an_access_token_raises(
 
     _patch_transport(monkeypatch, handler)
     with pytest.raises(AuthError) as excinfo:
-        await auth.fetch_token(credential, "marketplace", "production")
+        await auth.fetch_token(credential, "walmart:marketplace", "production")
     assert "no access_token" in str(excinfo.value)
 
 
@@ -163,7 +166,7 @@ async def test_non_json_token_response_raises(
 
     _patch_transport(monkeypatch, handler)
     with pytest.raises(AuthError) as excinfo:
-        await auth.fetch_token(credential, "marketplace", "production")
+        await auth.fetch_token(credential, "walmart:marketplace", "production")
     assert "not JSON" in str(excinfo.value)
 
 
@@ -179,7 +182,7 @@ async def test_a_fresh_cached_token_is_reused(
     manager = TokenManager()
     for _ in range(3):
         await manager.access_token(
-            credential, platform="marketplace", region="us", environment="production"
+            credential, platform="walmart:marketplace", region="us", environment="production"
         )
     assert len(calls) == 1
 
@@ -192,11 +195,11 @@ async def test_force_refresh_discards_the_cached_token(
     _patch_transport(monkeypatch, _token_response(calls))
     manager = TokenManager()
     await manager.access_token(
-        credential, platform="marketplace", region="us", environment="production"
+        credential, platform="walmart:marketplace", region="us", environment="production"
     )
     await manager.access_token(
         credential,
-        platform="marketplace",
+        platform="walmart:marketplace",
         region="us",
         environment="production",
         force_refresh=True,
@@ -213,15 +216,17 @@ async def test_the_cache_key_separates_platform_region_environment_and_credentia
     manager = TokenManager()
     other = Credential(client_id="cid-2", client_secret="s", advertisers=credential.advertisers)
     await manager.access_token(
-        credential, platform="marketplace", region="us", environment="production"
+        credential, platform="walmart:marketplace", region="us", environment="production"
     )
     await manager.access_token(
-        credential, platform="marketplace", region="us", environment="sandbox"
+        credential, platform="walmart:marketplace", region="us", environment="sandbox"
     )
     await manager.access_token(
-        credential, platform="marketplace", region="ca", environment="production"
+        credential, platform="walmart:marketplace", region="ca", environment="production"
     )
-    await manager.access_token(other, platform="marketplace", region="us", environment="production")
+    await manager.access_token(
+        other, platform="walmart:marketplace", region="us", environment="production"
+    )
     assert len(calls) == 4
 
 
@@ -233,10 +238,10 @@ async def test_region_lookup_in_the_cache_key_is_case_insensitive(
     _patch_transport(monkeypatch, _token_response(calls))
     manager = TokenManager()
     await manager.access_token(
-        credential, platform="marketplace", region="us", environment="production"
+        credential, platform="walmart:marketplace", region="us", environment="production"
     )
     await manager.access_token(
-        credential, platform="marketplace", region="US", environment="production"
+        credential, platform="walmart:marketplace", region="US", environment="production"
     )
     assert len(calls) == 1
 
@@ -257,7 +262,7 @@ async def test_concurrent_callers_fetch_the_token_once(
     await asyncio.gather(
         *[
             manager.access_token(
-                credential, platform="marketplace", region="us", environment="production"
+                credential, platform="walmart:marketplace", region="us", environment="production"
             )
             for _ in range(8)
         ]
@@ -273,10 +278,12 @@ async def test_invalidate_forces_the_next_call_to_refetch(
     _patch_transport(monkeypatch, _token_response(calls))
     manager = TokenManager()
     await manager.access_token(
-        credential, platform="marketplace", region="us", environment="production"
+        credential, platform="walmart:marketplace", region="us", environment="production"
     )
-    manager.invalidate(credential, platform="marketplace", region="US", environment="production")
+    manager.invalidate(
+        credential, platform="walmart:marketplace", region="US", environment="production"
+    )
     await manager.access_token(
-        credential, platform="marketplace", region="us", environment="production"
+        credential, platform="walmart:marketplace", region="us", environment="production"
     )
     assert len(calls) == 2

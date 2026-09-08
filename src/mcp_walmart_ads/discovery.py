@@ -8,9 +8,9 @@ An operation is addressed three ways, in decreasing specificity:
 
 * ``api`` + bare ``operationId`` -- the api scopes the lookup.
 * a qualified id, ``<api>:<operationId>`` (e.g.
-  ``marketplace:order-management:getAllOrders``). An api id always contains
-  exactly one colon and an operationId never contains one, so the split is
-  unambiguous.
+  ``walmart:marketplace:order-management:getAllOrders``). An api id always has
+  exactly two colons and an operationId never has one, so the final colon splits
+  them unambiguously.
 * a bare ``operationId`` alone, which resolves when it is unique across every
   spec. Some ids are not: ``getAnItem``, ``getReturns``, ``getTaxonomyResponse``
   and ``priceBulkUploads`` each appear in several Marketplace specs, and those
@@ -29,8 +29,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .platforms import platform_for
-from .specs import API_IDS, SpecError, load_spec, meta_for, spec_path
+from .platforms import platform_for, platform_of
+from .specs import API_IDS, SpecError, load_spec, meta_for, mirrors_of, spec_path
 
 HTTP_METHODS = frozenset({"get", "put", "post", "delete", "options", "head", "patch", "trace"})
 SCHEMA_REF_PREFIX = "#/components/schemas/"
@@ -79,7 +79,7 @@ class Operation:
 
     @property
     def platform(self) -> str:
-        return self.api.partition(":")[0]
+        return platform_of(self.api)
 
     def header_params(self) -> list[dict[str, Any]]:
         return [
@@ -198,16 +198,18 @@ def list_apis() -> list[dict[str, Any]]:
         info = spec.get("info") or {}
         meta = meta_for(api)
         environments = meta.environments_for()
-        rows.append(
-            {
-                "api": api,
-                "platform": meta.platform,
-                "title": info.get("title"),
-                "version": info.get("version"),
-                "operations": len(ops),
-                "environments": list(environments) if environments else "from config",
-            }
-        )
+        row: dict[str, Any] = {
+            "api": api,
+            "platform": meta.platform,
+            "title": info.get("title"),
+            "version": info.get("version"),
+            "operations": len(ops),
+            "environments": list(environments) if environments else "from config",
+        }
+        mirrors = mirrors_of(api)
+        if mirrors:
+            row["mirrored_by"] = list(mirrors)
+        rows.append(row)
     return rows
 
 
@@ -230,7 +232,7 @@ def list_endpoints(
         apis = [api]
     else:
         if platform is not None:
-            platform_for(platform)  # raises UnknownPlatform
+            platform_for(platform)  # raises UnknownPlatform, naming PLATFORM_IDS
         apis = _available_apis(platform)
 
     q = query.casefold() if query else None
@@ -325,16 +327,20 @@ def describe_endpoint(operation_id: str, *, api: str | None = None) -> dict[str,
             )
         ]
 
-    return {
+    described: dict[str, Any] = {
         "operation_id": op.qualified_id,
         "api": op.api,
         "platform": op.platform,
         "method": op.method.upper(),
         "path": op.path,
         "environments": list(environments) if environments else "from config",
-        "operation": raw,
-        "components": {"schemas": _resolve_refs(spec, op.raw)},
     }
+    mirrors = mirrors_of(op.api)
+    if mirrors:
+        described["mirrored_by"] = list(mirrors)
+    described["operation"] = raw
+    described["components"] = {"schemas": _resolve_refs(spec, op.raw)}
+    return described
 
 
 def _collect_refs(value: Any) -> list[str]:
