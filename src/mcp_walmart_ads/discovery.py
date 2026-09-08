@@ -305,6 +305,12 @@ def get_operation(operation_id: str, *, api: str | None = None) -> Operation:
 def describe_endpoint(operation_id: str, *, api: str | None = None) -> dict[str, Any]:
     """Return one operation plus its transitive ``components.schemas`` closure.
 
+    Deliberately does not report ``mirrored_by``. Mirroring is a property of an
+    api pair, not of an operation: Walmart Connect and Sam's Club share only 13
+    of their 90 distinct sponsored-products operation ids, so surfacing it here
+    would suggest an operation-level equivalence that mostly does not hold.
+    :func:`list_apis` reports it, where the claim is exactly true.
+
     Server-managed headers are removed from the parameter list: they are injected
     from config and the spec itself, so surfacing them would invite an agent to
     supply an access token, a signature, or the single legal ``WM_MARKET`` value.
@@ -327,20 +333,16 @@ def describe_endpoint(operation_id: str, *, api: str | None = None) -> dict[str,
             )
         ]
 
-    described: dict[str, Any] = {
+    return {
         "operation_id": op.qualified_id,
         "api": op.api,
         "platform": op.platform,
         "method": op.method.upper(),
         "path": op.path,
         "environments": list(environments) if environments else "from config",
+        "operation": raw,
+        "components": {"schemas": _resolve_refs(spec, op.raw)},
     }
-    mirrors = mirrors_of(op.api)
-    if mirrors:
-        described["mirrored_by"] = list(mirrors)
-    described["operation"] = raw
-    described["components"] = {"schemas": _resolve_refs(spec, op.raw)}
-    return described
 
 
 def _collect_refs(value: Any) -> list[str]:

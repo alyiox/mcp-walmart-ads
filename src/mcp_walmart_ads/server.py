@@ -262,10 +262,9 @@ async def list_endpoints(
 @mcp.tool(
     name="describe_endpoint",
     description=(
-        "[Walmart] Describe one OpenAPI operation. Returns it plus every components.schemas "
-        "entry reachable from it, so a request body can be built without the full spec. Server- "
-        "managed auth and QoS headers are omitted — do not supply them. mirrored_by names other "
-        "retailers serving the same surface."
+        "[Walmart] Describe one OpenAPI operation. Returns it with every components.schemas "
+        "entry reachable from it, so a request body can be built without the full spec. The "
+        "headers call_endpoint supplies itself are omitted — do not send them."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )

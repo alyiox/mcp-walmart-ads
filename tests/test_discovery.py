@@ -321,12 +321,47 @@ def test_an_api_with_no_mirror_omits_the_field():
     assert "mirrored_by" not in rows["walmart:marketplace:order-management"]
 
 
-def test_describe_reports_the_mirrored_counterpart():
-    described = discovery.describe_endpoint("samsclub:ads:sponsored-products:AdGroupList")
-    assert described["mirrored_by"] == ["walmart:ads:sponsored-products"]
-    assert "mirrored_by" not in discovery.describe_endpoint(
-        "walmart:marketplace:order-management:getAllOrders"
-    )
+def test_describe_does_not_report_mirroring():
+    # Mirroring is a property of an api pair, not of an operation. Reporting it
+    # here would imply the operation exists on the mirror, which mostly it does
+    # not -- see test_mirrored_apis_overlap_only_partly.
+    for operation_id in (
+        "samsclub:ads:sponsored-products:AdGroupList",
+        "walmart:marketplace:order-management:getAllOrders",
+    ):
+        assert "mirrored_by" not in discovery.describe_endpoint(operation_id)
+
+
+def test_mirrored_apis_overlap_only_partly():
+    """The measurement that keeps `mirrored_by` off describe_endpoint.
+
+    If these two ever converge, reporting mirroring per operation becomes
+    defensible; while they do not, it would steer an agent at endpoints that
+    are not there.
+    """
+    ids = {
+        api: {r["operation_id"].rsplit(":", 1)[1] for r in discovery.list_endpoints(api=api)}
+        for api in ("walmart:ads:sponsored-products", "samsclub:ads:sponsored-products")
+    }
+    walmart, samsclub = ids.values()
+    shared = walmart & samsclub
+    assert shared, "expected some overlap; the apis share a lineage"
+    assert len(shared) < len(samsclub) / 2, "fewer than half of Sam's Club ops exist on Walmart"
+    assert len(shared) < len(walmart) / 2, "fewer than half of Walmart's ops exist on Sam's Club"
+
+
+def test_a_shared_operation_id_means_the_same_endpoint():
+    # Where an id does exist on both, it sits on an identical path -- the one
+    # part of the mirroring claim that holds without qualification.
+    paths = {}
+    for api in ("walmart:ads:sponsored-products", "samsclub:ads:sponsored-products"):
+        paths[api] = {
+            r["operation_id"].rsplit(":", 1)[1]: r["path"]
+            for r in discovery.list_endpoints(api=api)
+        }
+    left, right = paths.values()
+    for operation_id in set(left) & set(right):
+        assert left[operation_id] == right[operation_id], operation_id
 
 
 def test_a_mirrored_operation_is_reachable_on_both_platforms():
