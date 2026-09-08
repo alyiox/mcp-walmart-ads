@@ -1,4 +1,4 @@
-# Walmart Connect Advertising APIs
+# Walmart APIs
 
 [![CI](https://github.com/alyiox/mcp-walmart-ads/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alyiox/mcp-walmart-ads/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/mcp-walmart-ads.svg)](https://pypi.org/project/mcp-walmart-ads/)
@@ -7,24 +7,45 @@
 
 <!-- mcp-name: io.github.alyiox/mcp-walmart-ads -->
 
-MCP server for [Walmart Connect Ads APIs](https://developer.walmart.com/advertising-partners) — Sponsored Search and Display.
+MCP server for three Walmart Inc. API families, behind one tool surface:
 
-Exposes spec-driven discovery (`list_endpoints`, `describe_endpoint`), a generic API proxy (`call_endpoint`), a runtime spec refresher (`refresh_specs`), and a display-snapshot downloader (`download_display_snapshot`). The AI agent discovers endpoints from bundled OpenAPI specs then calls them; the server handles RSA-SHA256 signing and auth headers automatically.
+| Platform | APIs | Auth |
+|---|---|---|
+| [Walmart Connect Ads](https://developer.walmart.com/advertising-partners) | Sponsored Search, Display | RSA-SHA256 signature + bearer token |
+| [Sam's Club Sponsored Ads](https://developer.samsclub.com) | Sponsored Ads | RSA-SHA256 signature + bearer token |
+| [Walmart Marketplace](https://developer.walmart.com/home/us-mp) | 28 domains (orders, items, feeds, reports, …) | OAuth2 `client_credentials` |
+
+Five tools over 31 apis and 424 operations: spec-driven discovery (`list_endpoints`,
+`describe_endpoint`), a generic API proxy (`call_endpoint`), a downloader
+(`download_file`), and a runtime spec refresher (`refresh_specs`). The agent discovers
+endpoints from bundled OpenAPI specs and calls them; the server handles signing, token
+acquisition, and header construction.
 
 ## Features
 
-- **Spec-driven discovery** — list/describe endpoints from bundled OpenAPI specs, refreshable at runtime
-- **Any endpoint** — call by operation id or raw method+path (raw path reaches unpublished endpoints); no code changes when APIs evolve
-- Supports both Sponsored Search and Display API families
-- Multi-region, multi-environment (production + staging) via config file
-- Per-request RSA-SHA256 signing with automatic header construction
-- Large responses truncated with full data available via MCP resource URI
-- Bundled OpenAPI specs (refreshable at runtime) give the agent endpoint schemas on demand
+- **One flat api namespace** — `connect:search`, `samsclub:sponsored`,
+  `marketplace:order-management`, … An api id carries its platform, so an operation id
+  resolves to a base URL and an auth model without the caller naming either
+- **Spec-driven discovery** — list/describe endpoints from 33 bundled OpenAPI specs,
+  refreshable at runtime; `describe_endpoint` returns an operation plus its full
+  `components.schemas` closure and strips the headers the server owns
+- **Any endpoint** — call by operation id or raw method+path; raw paths reach
+  alpha/beta/unpublished endpoints absent from the specs
+- **Both auth models** — per-request RSA-SHA256 signing for the ads platforms; OAuth2
+  token acquisition with per-credential caching, single-flight refresh, and one retry
+  after a 401 for Marketplace
+- **Per-platform config isolation** — a malformed block for one platform does not stop
+  the others loading, and discovery works with no credentials at all
+- **Credential-safe cURL** — every cached cURL replaces bearer tokens, access tokens,
+  and signatures with placeholders
+- Large responses truncated, with the full body available at an MCP resource URI
 
 ## Requirements
 
 - Python 3.13+
-- Walmart Connect Partner Network credentials (consumer ID, RSA key pair, bearer token)
+- Credentials for whichever platforms you use:
+  - **Walmart Connect / Sam's Club** — consumer ID, RSA key pair, bearer token
+  - **Walmart Marketplace** — client ID + secret, and the advertiser (seller profile) ids they serve
 
 ## Quick start
 
@@ -54,42 +75,46 @@ The config file lives under your home directory at `~/.config/mcp-walmart-ads/co
 
 ```bash
 # Unix-like (macOS, Linux, WSL, …)
-mkdir -p ~/.config/mcp-walmart-ads/keys/us
+mkdir -p ~/.config/mcp-walmart-ads/keys/connect
 cp config.example.json ~/.config/mcp-walmart-ads/config.json
 ```
 
 ```powershell
 # Windows (PowerShell)
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.config\mcp-walmart-ads\keys\us"
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.config\mcp-walmart-ads\keys\connect"
 Copy-Item config.example.json "$env:USERPROFILE\.config\mcp-walmart-ads\config.json"
 ```
 
-**2. Edit `~/.config/mcp-walmart-ads/config.json`**
+**2. Fill in your credentials.** Configure only the platforms you use — an absent
+platform is simply unconfigured, and the discovery tools keep working regardless.
+
+### Shape
+
+```
+platforms.<platform>.regions.<region>.<environment> = <auth block>
+```
+
+The auth block's shape follows the platform's auth model. There is exactly one shape per
+platform, so no discriminator field is needed.
+
+**Signature platforms** (`connect`, `samsclub`):
 
 ```json
 {
-  "response_cache_ttl": 3600,
-  "truncate_threshold": 1024,
-  "regions": {
-    "US": {
-      "production": {
-        "consumer_id": "your-consumer-id",
-        "private_key": "./keys/us/prod.pem",
-        "private_key_version": "1",
-        "bearer_token": "your-bearer-token",
-        "base_urls": {
-          "search": "https://developer.api.walmart.com/api-proxy/service/WPA/Api/v1",
-          "display": "https://developer.api.walmart.com/api-proxy/service/display/api/v1"
-        }
-      },
-      "staging": {
-        "consumer_id": "your-staging-consumer-id",
-        "private_key": "./keys/us/staging.pem",
-        "private_key_version": "1",
-        "bearer_token": "your-staging-bearer-token",
-        "base_urls": {
-          "search": "https://developer.api.stg.walmart.com/api-proxy/service/WPA/Api/v1",
-          "display": "https://developer.api.us.stg.walmart.com/api-proxy/service/display/api/v1"
+  "platforms": {
+    "connect": {
+      "regions": {
+        "US": {
+          "production": {
+            "consumer_id": "your-consumer-id",
+            "private_key": "./keys/connect/us-prod.pem",
+            "private_key_version": "1",
+            "bearer_token": "your-bearer-token",
+            "base_urls": {
+              "search": "https://developer.api.walmart.com/api-proxy/service/WPA/Api/v1",
+              "display": "https://developer.api.walmart.com/api-proxy/service/display/api/v1"
+            }
+          }
         }
       }
     }
@@ -97,105 +122,133 @@ Copy-Item config.example.json "$env:USERPROFILE\.config\mcp-walmart-ads\config.j
 }
 ```
 
-**3. Place your RSA private key PEM files in `~/.config/mcp-walmart-ads/keys/`**
-
-Key paths in the config are resolved relative to the config directory, so `./keys/us/prod.pem` resolves to `~/.config/mcp-walmart-ads/keys/us/prod.pem`.
-
-`config.example.json` also includes a `CA` region that uses the same API hosts as `US`. Select the WAP market with the per-call `tenant` parameter (see below), not via different base URLs.
-
-| Config field | Description |
+| Field | Notes |
 |---|---|
-| `response_cache_ttl` | Seconds to keep truncated responses in memory (default `3600`) |
-| `truncate_threshold` | Response byte limit before truncation (default `1024`) |
-| `regions.<R>.<E>.consumer_id` | Your Walmart Connect consumer ID |
-| `regions.<R>.<E>.private_key` | Path to RSA private key PEM (relative to config dir or absolute) |
-| `regions.<R>.<E>.private_key_version` | Key version string (default `"1"`) |
-| `regions.<R>.<E>.bearer_token` | OAuth bearer token |
-| `regions.<R>.<E>.base_urls.search` | Sponsored Search API base URL |
-| `regions.<R>.<E>.base_urls.display` | Display API base URL |
+| `consumer_id` | Partner Network consumer ID |
+| `private_key` | Path to the RSA private key (PEM); relative paths resolve against the config directory |
+| `private_key_version` | Key version string (default `"1"`) |
+| `bearer_token` | OAuth bearer token |
+| `base_urls.<api>` | One per api in the platform's discovery surface. Keys may be bare (`search`) or qualified (`connect:search`). Extra keys are allowed for the auxiliary specs reached by raw method+path |
+
+Environment names are free-form for these platforms — Walmart may issue a tenant only
+`production`, or `production` + `staging`.
+
+**OAuth2 platform** (`marketplace`):
+
+```json
+{
+  "platforms": {
+    "marketplace": {
+      "regions": {
+        "US": {
+          "production": {
+            "credentials": [
+              {
+                "client_id": "your-client-id",
+                "client_secret": "your-client-secret",
+                "advertisers": [
+                  { "id": 7060158, "partner_id": "10001234" },
+                  { "id": 7060159 }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Advertiser ids nest under the credential that serves them, so a secret appears exactly
+once and a dangling advertiser reference is structurally impossible. `partner_id` is
+per-seller because two `payments` operations require it as `WM_PARTNER_ID`. Base URLs are
+fixed by the server and absent from the file; `environment` must be `production` or
+`sandbox`.
+
+Regions are a namespace, not a route — for Marketplace every region reaches the same
+hosts. The level exists because advertiser ids are only unique within a region.
+
+### Top-level options
+
+| Field | Default | Notes |
+|---|---|---|
+| `response_cache_ttl` | `3600` | Seconds a truncated body or download stays readable at its resource URI |
+| `truncate_threshold` | `1024` | Response bytes returned inline before truncating to a preview |
 
 ### Market → tenant (`wap-tenant-id`)
 
-Pass `tenant` on `call_endpoint` / `download_display_snapshot` for non-US WAP markets. Omit for US.
-
-| Market | `tenant` value |
-|---|---|
-| US | *(omit)* |
-| CA | `WMT_CA` |
-| MX | `WMT_MX`, `WBD_OD`, or `WMT_BD` |
+Pass `tenant` on `call_endpoint` / `download_file` for non-US Walmart Connect markets
+(e.g. `WMT_CA`, `WMT_MX`, `WBD_OD`). Omit for US and for Marketplace.
 
 ## Tools
 
 ### `list_endpoints`
 
-List operations from the bundled OpenAPI spec for an `ad_type`, with optional filters.
+List operations across every api, with optional filters.
 
-| Parameter | Required | Description |
-|---|---|---|
-| `ad_type` | yes | `search` or `display` |
-| `query` | no | Case-insensitive substring match on operationId, path, or summary |
-| `tag` | no | Filter to operations whose OpenAPI tags include this value |
-| `method` | no | Filter by HTTP verb |
+| Parameter | Notes |
+|---|---|
+| `query` | Case-insensitive substring on operation id, path, or summary |
+| `api` | Limit to one api, e.g. `marketplace:order-management` |
+| `platform` | Limit to one platform — `connect`, `samsclub`, `marketplace` |
+| `tag` | Filter by OpenAPI tag |
+| `method` | Filter by HTTP verb |
+
+Returned operation ids are qualified (`api:operationId`) and can be passed straight to
+`describe_endpoint` or `call_endpoint`.
 
 ### `describe_endpoint`
 
-Return one operation plus the `components.schemas` reachable from it (its `$ref` closure), so request bodies and responses can be built without the full spec.
+One operation plus every `components.schemas` entry reachable from it, so request bodies
+can be built without the full spec. Server-managed auth and QoS headers are omitted.
 
-| Parameter | Required | Description |
-|---|---|---|
-| `ad_type` | yes | `search` or `display` |
-| `operation_id` | yes | Spec operation id (from `list_endpoints`) |
+| Parameter | Notes |
+|---|---|
+| `operation_id` | Qualified (`api:operationId`) or bare when unambiguous |
+| `api` | Api to resolve a bare id in |
 
 ### `call_endpoint`
 
-Execute any Walmart Connect Ads API endpoint. Identify it by `operation_id`, or by raw `method` + `path`. Raw method+path also reaches alpha/beta/unpublished endpoints that are not in the bundled specs. The server handles RSA-SHA256 signing.
+Execute an authenticated request against any configured platform.
 
-| Parameter | Required | Description |
-|---|---|---|
-| `region` | yes | e.g. `US` |
-| `env` | yes | `production` or `staging` |
-| `ad_type` | yes | `search` or `display` |
-| `operation_id` | no* | Spec operation id; resolves `method`+`path` |
-| `method` | no* | `GET`, `POST`, `PUT`, `PATCH`, or `DELETE` |
-| `path` | no* | e.g. `/api/v1/campaigns` |
-| `params` | no | Query string parameters (JSON object) |
-| `body` | no | JSON request body for POST/PUT (object or array) |
-| `advertiser_id` | no | Sent as `X-Advertiser-ID`; required by many display/creative/campaign endpoints |
-| `tenant` | no | Sent as `wap-tenant-id` for non-US WAP (e.g. `WMT_CA`); omit for US |
+| Parameter | Notes |
+|---|---|
+| `region`, `environment` | Required. Src: config |
+| `operation_id` | Qualified or bare. Resolves api, platform, method, path, and required headers |
+| `api` | Required with raw `method` + `path`; otherwise inferred from `operation_id` |
+| `method`, `path` | Raw route, reaching endpoints absent from the specs |
+| `path_params` | Values for `{placeholders}` in the path |
+| `params`, `body` | Query string and JSON body |
+| `file_path` | Send the file as `multipart/form-data` — Marketplace feed uploads. Pair with the `feedType` query parameter |
+| `advertiser_id` | **Required on `marketplace`**, where it selects the credential. Optional on the ads platforms, where it is sent as `X-Advertiser-ID` |
+| `tenant` | WAP tenant for non-US Walmart Connect regions |
 
-\* Provide either `operation_id`, or both `method` and `path`.
+### `download_file`
+
+Download a report, label, or snapshot from an authenticated endpoint. Give a full `url`
+(e.g. the `details` URL from a display snapshot poll), or `operation_id`, or `api` with
+`method` + `path`.
+
+With `dest_path` the bytes are written there. Without it they are gunzipped when gzipped
+and cached, and the result carries `cached_at` — a binary payload with no `dest_path`
+asks for one instead. Redirects are followed, keeping auth headers on a relative or
+same-host `Location` and dropping credentials cross-host; the result includes `urls`, the
+hop path. `platform` is required only when downloading from a bare `url`.
 
 ### `refresh_specs`
 
-Re-fetch the bundled OpenAPI specs from ReadMe's public api-registry into a user cache (`~/.cache/mcp-walmart-ads/specs/`) that takes precedence over the bundled copy.
-
-| Parameter | Required | Description |
-|---|---|---|
-| `spec_id` | no | One spec to refresh (e.g. `search/sponsored-products`); omit to refresh all |
-
-### `download_display_snapshot`
-
-Download a display snapshot file (report or entity). Display snapshot URLs require authenticated requests, so this tool handles the signing automatically. Use the full download URL from the `details` field after polling a display snapshot to `done` status.
-
-| Parameter | Required | Description |
-|---|---|---|
-| `region` | yes | e.g. `US` or `CA` |
-| `env` | yes | `production` or `staging` |
-| `download_url` | yes | Full URL from the snapshot poll `details` field |
-| `advertiser_id` | yes | Advertiser ID used when creating the snapshot |
-| `tenant` | no | Sent as `wap-tenant-id` for non-US WAP; omit for US |
+Re-fetch bundled specs into a user cache that then takes precedence over the bundled
+copies. Pass `api` to refresh one; omit to refresh all 33.
 
 ## MCP resources
 
-Endpoint schemas come from the bundled OpenAPI specs via `list_endpoints` / `describe_endpoint` (see [Tools](#tools)), not from static resources.
-
-### Dynamic resources
-
 | Resource URI | Description |
 |---|---|
-| `wmc://config` | Available regions, environments, and ad types from your config |
-| `wmc://responses/{request_id}` | Full body of a truncated API response (cached in memory, TTL from config) |
-| `wmc://curl/{request_id}` | Reproducible cURL command for a previous API request |
+| `wmt://config` | Configured platforms, regions, environments, and their advertiser ids or api base URLs |
+| `wmt://apis` | The api namespace — every api id, its platform, environments, and operation count |
+| `wmt://responses/{request_id}` | Full body of a truncated response or a cached download (in memory, TTL from config) |
+| `wmt://curl/{request_id}` | Reproducible cURL for a previous request, credentials replaced with placeholders |
 
 ## MCP host examples
 
@@ -206,7 +259,7 @@ Add to `.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "walmart-ads": {
+    "walmart": {
       "command": "uvx",
       "args": ["mcp-walmart-ads"]
     }
@@ -221,7 +274,7 @@ Add to your Claude Code MCP config:
 ```json
 {
   "mcpServers": {
-    "walmart-ads": {
+    "walmart": {
       "command": "uvx",
       "args": ["mcp-walmart-ads"]
     }
@@ -232,7 +285,7 @@ Add to your Claude Code MCP config:
 ### Codex
 
 ```toml
-[mcp_servers.walmart-ads]
+[mcp_servers.walmart]
 command = "uvx"
 args = ["mcp-walmart-ads"]
 ```
@@ -243,7 +296,7 @@ args = ["mcp-walmart-ads"]
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "walmart-ads": {
+    "walmart": {
       "type": "local",
       "enabled": true,
       "command": ["uvx", "mcp-walmart-ads"]
@@ -258,7 +311,7 @@ args = ["mcp-walmart-ads"]
 {
   "inputs": [],
   "servers": {
-    "walmart-ads": {
+    "walmart": {
       "type": "stdio",
       "command": "uvx",
       "args": ["mcp-walmart-ads"]
@@ -267,20 +320,44 @@ args = ["mcp-walmart-ads"]
 }
 ```
 
+## Where the specs come from
+
+Walmart publishes no OpenAPI files, but each ReadMe reference page hydrates its HTML with
+the registry UUIDs of its documents, and `https://dash.readme.com/api/v1/api-registry/<uuid>`
+serves the full spec unauthenticated. That covers Walmart Connect and all 28 Marketplace
+domains. Sam's Club publishes neither, so its spec is hand-authored from the developer
+docs; `scripts/build_samsclub_spec.py` regenerates a *candidate* from those docs and the
+scheduled `spec drift` workflow opens a PR when they change, as a human review gate. The
+candidate is never shipped and never loaded at runtime.
+
+Specs are stored verbatim as upstream served them, so a refresh diff shows exactly what
+changed; oversized inline examples and `x-readme` metadata are stripped on load rather
+than on disk.
+
+```bash
+# Rebuild the bundled specs (registry-sourced only, by default)
+uv run python scripts/fetch_specs.py
+uv run python scripts/fetch_specs.py connect:search marketplace:order-management
+
+# Regenerate the Sam's Club candidate spec for review
+uv run --group spec-build python scripts/build_samsclub_spec.py
+```
+
 ## Development
 
 ```bash
-uv sync --group dev    # install deps
-uv run pytest          # run tests
-uv run ruff check .    # lint
-uv run ruff format .   # format
-uv run pyright         # type check
+uv sync --group dev
+uv run ruff check src/ tests/ scripts/
+uv run ruff format --check src/ tests/ scripts/
+uv run pyright
+uv run pytest tests/ -v
 ```
 
 ## Contributing
 
-Open issues or PRs. Follow existing style and add tests where appropriate.
+Issues and pull requests are welcome. Please keep changes focused and make sure
+`ruff check`, `ruff format --check`, `pyright`, and `pytest` all pass.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

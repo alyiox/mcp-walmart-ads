@@ -1,36 +1,72 @@
+"""MCP server exposing Walmart Connect, Sam's Club, and Walmart Marketplace APIs.
+
+Five tools over one flat ``api`` namespace. The api id carries its platform
+(``connect:search``, ``samsclub:sponsored``, ``marketplace:order-management``),
+so an operation id resolves to a platform, a base URL, and an auth model without
+the caller naming any of them -- ``api`` is only required when calling by raw
+method+path, where there is no operation to infer it from.
+"""
+
 from __future__ import annotations
 
 import gzip
 import json
+from pathlib import Path
 from typing import Annotated, Any
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, model_serializer
 
-from . import discovery, specs
-from .client import download_file, execute_request
-from .config import load_config
+from . import client, discovery, specs
+from .auth import AuthError, TokenManager
+from .client import RequestError
+from .config import Config, ConfigError, SignatureEnv, load_config
+from .platforms import PLATFORM_IDS, UnknownPlatform
 from .resources import ResponseCache, read_cached_response
 from .specs import SpecError
 
-config = load_config()
-cache = ResponseCache(ttl_seconds=config.response_cache_ttl)
-
 mcp = MCPServer(
-    "Walmart Connect Ads",
+    "Walmart APIs",
     instructions=(
-        "MCP server for Walmart Connect Ads APIs. "
-        "Discover endpoints with list_endpoints (filter by query/tag/method) "
-        "and inspect one with describe_endpoint (returns the operation plus "
-        "its schema closure). Execute with call_endpoint — by operation_id, or by raw "
-        "method+path (raw path also reaches alpha/beta/unpublished endpoints not in the "
-        "specs). The specs are bundled and can be refreshed at runtime from the public "
-        "registry with refresh_specs."
+        "MCP server for Walmart Connect Ads, Sam's Club Sponsored Ads, and Walmart "
+        "Marketplace APIs. Discover endpoints with list_endpoints (filter by "
+        "query/api/platform/tag/method) and inspect one with describe_endpoint, which "
+        "returns the operation plus its schema closure and omits the auth and QoS "
+        "headers the server injects itself. Execute with call_endpoint — by operation_id "
+        "(qualified as api:operationId, or bare when unambiguous) or by raw method+path "
+        "with an api. Marketplace calls need an advertiser_id, which selects the "
+        "credential; on the ads platforms it is an optional header. Read wmt://apis for "
+        "the api namespace and wmt://config for what is configured. Fetch reports, "
+        "labels, and snapshots with download_file. The 33 bundled specs can be refreshed "
+        "at runtime with refresh_specs."
     ),
 )
 
-# ── tool result models ─────────────────────────────────────────────────────────
+tokens = TokenManager()
+
+_config: Config | None = None
+_cache: ResponseCache | None = None
+
+
+def config() -> Config:
+    """Load and memoize the config.
+
+    Deliberately lazy: discovery over the bundled specs must work on a machine
+    with no credentials at all, so a missing config file only fails the tools
+    that actually need it.
+    """
+    global _config, _cache
+    if _config is None:
+        _config = load_config()
+        _cache = ResponseCache(ttl_seconds=_config.response_cache_ttl)
+    return _config
+
+
+def cache() -> ResponseCache:
+    config()
+    assert _cache is not None
+    return _cache
 
 
 class _ExcludeNone(BaseModel):
@@ -43,16 +79,19 @@ class ApiToolResult(_ExcludeNone):
     status_code: int | None = None
     body: Any | None = None
     truncated: bool | None = None
-    cached_at: str | None = None  # wmc://responses/{request_id}
-    curl: str | None = None  # wmc://curl/{request_id}
+    cached_at: str | None = None  # wmt://responses/{request_id}
+    curl: str | None = None  # wmt://curl/{request_id}
     error: str | None = None
 
 
 class DownloadToolResult(_ExcludeNone):
     status_code: int | None = None
+    path: str | None = None
+    bytes_written: int | None = None
     size_bytes: int | None = None
-    cached_at: str | None = None  # wmc://responses/{request_id}
-    urls: str | None = None  # comma-separated hop URLs (start → … → last)
+    content_type: str | None = None
+    cached_at: str | None = None  # wmt://responses/{request_id}
+    urls: str | None = None  # hop URLs (start → … → last)
     error: str | None = None
 
 
@@ -60,58 +99,228 @@ class DownloadToolResult(_ExcludeNone):
 
 
 @mcp.resource(
-    "wmc://config",
+    "wmt://config",
     name="config",
-    description="[WalmartAds] Available regions, environments, and ad types. Src: config.",
+    description=(
+        "[Walmart] List configured platforms, regions, environments, and their "
+        "advertiser ids or api base URLs. Src: config."
+    ),
 )
 def get_config() -> str:
+    try:
+        cfg = config()
+    except ConfigError as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
     result: dict[str, Any] = {}
-    for region, envs in config.regions.items():
-        result[region] = {}
-        for env_name, env_cfg in envs.items():
-            result[region][env_name] = list(env_cfg.base_urls.keys())
-    return json.dumps({"regions": result}, indent=2)
+    for platform, regions in cfg.platforms.items():
+        if platform in cfg.platform_errors:
+            result[platform] = {"error": cfg.platform_errors[platform]}
+            continue
+        result[platform] = {}
+        for region, envs in regions.items():
+            result[platform][region] = {}
+            for env_name, env_cfg in envs.items():
+                if isinstance(env_cfg, SignatureEnv):
+                    result[platform][region][env_name] = {"apis": sorted(env_cfg.base_urls)}
+                else:
+                    advertisers: list[dict[str, Any]] = []
+                    for advertiser_id in env_cfg.advertisers:
+                        # Partner ID is a seller identifier, not a secret, and
+                        # knowing which advertisers have one saves a failed
+                        # payments call.
+                        entry: dict[str, Any] = {"id": advertiser_id}
+                        partner_id = env_cfg.partner_id_for(advertiser_id)
+                        if partner_id:
+                            entry["partner_id"] = partner_id
+                        advertisers.append(entry)
+                    result[platform][region][env_name] = {"advertisers": advertisers}
+    return json.dumps({"platforms": result}, indent=2)
 
 
 @mcp.resource(
-    "wmc://responses/{request_id}",
+    "wmt://apis",
+    name="apis",
+    description=(
+        "[Walmart] List the api namespace — every api id, its platform, environments, "
+        "and operation count. Src: specs."
+    ),
+)
+def get_apis() -> str:
+    return json.dumps({"apis": discovery.list_apis()}, indent=2)
+
+
+@mcp.resource(
+    "wmt://responses/{request_id}",
     name="cached_response",
-    description="[WalmartAds] Retrieve full cached API response. Src: responses.",
+    description="[Walmart] Retrieve full cached API response. Src: responses.",
 )
 def cached_response_resource(request_id: str) -> str:
-    content = read_cached_response(request_id, cache)
+    try:
+        content = read_cached_response(request_id, cache())
+    except ConfigError as e:
+        return str(e)
     if content is None:
         return f"No cached response found for request_id={request_id} (may have expired)."
     return content
 
 
 @mcp.resource(
-    "wmc://curl/{request_id}",
+    "wmt://curl/{request_id}",
     name="request_curl",
-    description="[WalmartAds] Retrieve cURL command for a previous API request. Src: responses.",
+    description=(
+        "[Walmart] Retrieve cURL command for a previous API request. "
+        "Credentials are replaced with placeholders. Src: responses."
+    ),
 )
 def cached_curl_resource(request_id: str) -> str:
-    data = cache.get(f"curl/{request_id}")
+    try:
+        data = cache().get(f"curl/{request_id}")
+    except ConfigError as e:
+        return str(e)
     if data is None:
         return f"No cURL command found for request_id={request_id} (may have expired)."
-    return f"# cURL (auth headers are time-limited)\n\n{data}"
+    return f"# cURL (credentials replaced with placeholders)\n\n{data}"
 
 
-# ── tool ───────────────────────────────────────────────────────────────────────
+# ── discovery tools ────────────────────────────────────────────────────────────
+
+
+@mcp.tool(
+    name="list_endpoints",
+    description=(
+        "[Walmart] List OpenAPI operations across every api, with optional filters. "
+        "Returned operation ids are qualified (api:operationId) and can be passed "
+        "straight to describe_endpoint or call_endpoint."
+    ),
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+async def list_endpoints(
+    query: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[Walmart] Case-insensitive substring match on operation id, path, or summary."
+            ),
+        ),
+    ] = None,
+    api: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[Walmart] Limit to one api, e.g. marketplace:order-management "
+                "or connect:search. Src: apis."
+            ),
+        ),
+    ] = None,
+    platform: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[Walmart] Limit to one platform — connect, samsclub, or marketplace. Src: apis."
+            ),
+        ),
+    ] = None,
+    tag: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="[Walmart] Filter to operations whose OpenAPI tags include this value.",
+        ),
+    ] = None,
+    method: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="[Walmart] Filter by HTTP verb — GET, POST, PUT, PATCH, or DELETE.",
+        ),
+    ] = None,
+) -> dict[str, Any]:
+    try:
+        endpoints = discovery.list_endpoints(
+            query=query, api=api, platform=platform, tag=tag, method=method
+        )
+    except (SpecError, UnknownPlatform) as e:
+        return {"error": str(e)}
+    return {"count": len(endpoints), "endpoints": endpoints}
+
+
+@mcp.tool(
+    name="describe_endpoint",
+    description=(
+        "[Walmart] Describe one OpenAPI operation with its schema closure. "
+        "Returns the operation plus every components.schemas entry reachable from it, "
+        "so request bodies and responses can be built without the full spec. "
+        "Server-managed auth and QoS headers are omitted — do not supply them."
+    ),
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+async def describe_endpoint(
+    operation_id: Annotated[
+        str,
+        Field(
+            description=(
+                "[Walmart] Operation id, qualified as api:operationId (e.g. "
+                "marketplace:order-management:getAllOrders) or bare when unambiguous. "
+                "Src: operations."
+            )
+        ),
+    ],
+    api: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[Walmart] Api to resolve a bare operation_id in, e.g. connect:search. Src: apis."
+            ),
+        ),
+    ] = None,
+) -> dict[str, Any]:
+    try:
+        return discovery.describe_endpoint(operation_id, api=api)
+    except SpecError as e:
+        return {"error": str(e)}
+
+
+# ── execution tools ────────────────────────────────────────────────────────────
+
+
+def _resolve_target(
+    operation_id: str | None,
+    api: str | None,
+    method: str | None,
+    path: str | None,
+) -> tuple[discovery.Operation | None, str, str, str]:
+    """Resolve (operation, api, method, path), raising SpecError or RequestError."""
+    if operation_id is not None:
+        operation = discovery.get_operation(operation_id, api=api)
+        return operation, operation.api, operation.method, operation.path
+    if not api:
+        raise RequestError(
+            "provide operation_id, or api together with method and path "
+            f"(api is one of the ids in wmt://apis; platforms: {', '.join(PLATFORM_IDS)})"
+        )
+    if not method or not path:
+        raise RequestError("provide operation_id, or both method and path.")
+    specs.meta_for(api)  # raises SpecError on an unknown api
+    return None, api, method, path
 
 
 @mcp.tool(
     name="call_endpoint",
     description=(
-        "[WalmartAds] Execute an authenticated Walmart Connect Ads API request. "
-        "Identify the endpoint by operation_id (discovered via list_endpoints / "
-        "describe_endpoint) or by raw method + path; raw method+path also reaches "
-        "alpha/beta/unpublished endpoints absent from the bundled specs. Bodies "
-        "over the configured byte threshold are truncated to a preview; read the "
-        "returned cached_at resource (wmc://responses/{request_id}) for full data. "
-        "The result also carries a curl reference (wmc://curl/{request_id}). "
-        "Display snapshot files require authenticated download — use "
-        "download_display_snapshot with the URL from the `details` field."
+        "[Walmart] Execute an authenticated API request against any configured platform. "
+        "Identify the endpoint by operation_id (qualified as api:operationId, or bare when "
+        "unambiguous), or by raw method + path together with an api; raw method+path also "
+        "reaches alpha/beta/unpublished endpoints absent from the bundled specs. Auth, "
+        "signature, market, and correlation headers are added by the server. Pass file_path "
+        "to send the file as multipart/form-data, which is how Marketplace feed uploads "
+        "work. Bodies over the configured byte threshold are truncated to a preview; read "
+        "the returned cached_at resource (wmt://responses/{request_id}) for full data. The "
+        "result also carries a curl reference (wmt://curl/{request_id})."
     ),
     # Passthrough to any spec operation — the caller picks the verb, so assume
     # the most cautious shape: writes, may delete, retries are not safe.
@@ -125,22 +334,44 @@ def cached_curl_resource(request_id: str) -> str:
 async def call_endpoint(
     region: Annotated[
         str,
-        Field(description="[WalmartAds] API region, e.g. US. Src: config."),
+        Field(description="[Walmart] Region label, e.g. us. Src: config."),
     ],
-    env: Annotated[
+    environment: Annotated[
         str,
-        Field(description="[WalmartAds] Target environment — production or staging. Src: config."),
+        Field(
+            description=(
+                "[Walmart] Target environment — production, staging, or sandbox, per "
+                "platform. Src: config."
+            )
+        ),
     ],
-    ad_type: Annotated[
-        str,
-        Field(description="[WalmartAds] API family — search or display. Src: config."),
-    ],
+    operation_id: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[Walmart] Operation id, qualified as api:operationId or bare when "
+                "unambiguous. Resolves the api, platform, method, path, and required "
+                "headers. Src: operations."
+            ),
+        ),
+    ] = None,
+    api: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[Walmart] Api to call, e.g. marketplace:order-management. Required with "
+                "raw method+path; otherwise inferred from operation_id. Src: apis."
+            ),
+        ),
+    ] = None,
     method: Annotated[
         str | None,
         Field(
             default=None,
             description=(
-                "[WalmartAds] HTTP method — GET, POST, PUT, PATCH, or DELETE. "
+                "[Walmart] HTTP method — GET, POST, PUT, PATCH, or DELETE. "
                 "Required unless operation_id is given."
             ),
         ),
@@ -150,35 +381,42 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[WalmartAds] API path after base URL, e.g. /api/v1/campaigns. "
+                "[Walmart] API path after the base URL, e.g. /v3/orders or /api/v1/campaigns. "
                 "Required unless operation_id is given."
             ),
         ),
     ] = None,
-    operation_id: Annotated[
-        str | None,
+    path_params: Annotated[
+        dict[str, Any] | None,
         Field(
             default=None,
             description=(
-                "[WalmartAds] Spec operation id (e.g. AdGroupList). Resolves "
-                "method+path from the ad_type spec. Src: operations."
+                "[Walmart] Values for {placeholders} in the path, "
+                'e.g. {"purchaseOrderId": "1796277083022"}.'
             ),
         ),
     ] = None,
     params: Annotated[
         dict[str, Any] | None,
-        Field(
-            default=None,
-            description="[WalmartAds] Query string parameters as a JSON object.",
-        ),
+        Field(default=None, description="[Walmart] Query string parameters as a JSON object."),
     ] = None,
     body: Annotated[
         dict[str, Any] | list[Any] | None,
         Field(
             default=None,
             description=(
-                "[WalmartAds] JSON request body for POST/PUT "
+                "[Walmart] JSON request body for POST/PUT/PATCH "
                 "(object or array when the API requires it)."
+            ),
+        ),
+    ] = None,
+    file_path: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[Walmart] Local file to send as multipart/form-data instead of a JSON body — "
+                "Marketplace feed uploads. Pair with the feedType query parameter."
             ),
         ),
     ] = None,
@@ -187,8 +425,9 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[WalmartAds] Required by many display/creative/campaign endpoints. "
-                "Sent as X-Advertiser-ID."
+                "[Walmart] Required on marketplace, where it selects the credential to act "
+                "as. On connect/samsclub it is optional and sent as X-Advertiser-ID, which "
+                "many display/creative/campaign endpoints require. Src: config."
             ),
         ),
     ] = None,
@@ -197,240 +436,300 @@ async def call_endpoint(
         Field(
             default=None,
             description=(
-                "[WalmartAds] WAP tenant for non-US, e.g. WMT_CA, WMT_MX, WBD_OD. "
-                "Omit for US. Sent as wap-tenant-id."
+                "[Walmart] WAP tenant for non-US connect regions, e.g. WMT_CA, WMT_MX, "
+                "WBD_OD. Omit for US and for marketplace. Sent as wap-tenant-id."
             ),
         ),
     ] = None,
 ) -> ApiToolResult:
-    if region not in config.regions:
-        available = ", ".join(config.regions.keys())
-        msg = f"region '{region}' not found in config. Available: {available}"
-        return ApiToolResult(error=msg)
+    try:
+        operation, resolved_api, resolved_method, resolved_path = _resolve_target(
+            operation_id, api, method, path
+        )
+    except (SpecError, RequestError) as e:
+        return ApiToolResult(error=str(e))
 
-    region_envs = config.regions[region]
-    if env not in region_envs:
-        available = ", ".join(region_envs.keys())
-        msg = f"env '{env}' not found for region '{region}'. Available: {available}"
-        return ApiToolResult(error=msg)
+    platform = resolved_api.partition(":")[0]
+    try:
+        cfg = config().env(platform, region, environment)
+    except ConfigError as e:
+        return ApiToolResult(error=str(e))
 
-    ad_type_lower = ad_type.lower()
-    if ad_type_lower not in ("search", "display"):
-        return ApiToolResult(error="ad_type must be 'search' or 'display'.")
+    try:
+        response = await client.execute_request(
+            cfg=cfg,
+            api=resolved_api,
+            method=resolved_method,
+            path=resolved_path,
+            operation=operation,
+            params=params,
+            path_params=path_params,
+            body=body,
+            file_path=file_path,
+            advertiser_id=advertiser_id,
+            tenant=tenant,
+            tokens=tokens,
+        )
+    except (AuthError, RequestError, SpecError, ConfigError) as e:
+        return ApiToolResult(error=str(e))
 
-    if operation_id is not None:
-        try:
-            op = discovery.get_operation(ad_type_lower, operation_id)
-        except SpecError as e:
-            return ApiToolResult(error=str(e))
-        method, path = op.method, op.path
-    if not method or not path:
-        return ApiToolResult(error="provide operation_id, or both method and path.")
-
-    env_cfg = region_envs[env]
-
-    if ad_type_lower not in env_cfg.base_urls:
-        msg = f"base_url for ad_type '{ad_type}' not configured for {region}/{env}."
-        return ApiToolResult(error=msg)
-
-    response = await execute_request(
-        cfg=env_cfg,
-        ad_type=ad_type_lower,
-        method=method,
-        path=path,
-        params=params,
-        body=body,
-        advertiser_id=advertiser_id,
-        tenant=tenant,
-    )
-
-    cache.put(f"curl/{response.request_id}", response.curl)
-    curl_ref = f"wmc://curl/{response.request_id}"
+    cache().put(f"curl/{response.request_id}", response.curl)
+    curl_ref = f"wmt://curl/{response.request_id}"
 
     body_str = (
-        json.dumps(response.body, indent=2) if not isinstance(response.body, str) else response.body
+        response.body
+        if isinstance(response.body, str)
+        else json.dumps(response.body, indent=2, ensure_ascii=False)
     )
-    body_bytes = body_str.encode()
+    threshold = config().truncate_threshold
 
-    if len(body_bytes) > config.truncate_threshold:
-        cache.put(response.request_id, response.body)
-        preview = body_str[: config.truncate_threshold].rsplit("\n", 1)[0] + "\n... (truncated)"
+    if len(body_str.encode()) > threshold:
+        cache().put(response.request_id, response.body)
+        preview = body_str[:threshold].rsplit("\n", 1)[0] + "\n... (truncated)"
         return ApiToolResult(
             status_code=response.status_code,
             body=preview,
             truncated=True,
-            cached_at=f"wmc://responses/{response.request_id}",
+            cached_at=f"wmt://responses/{response.request_id}",
             curl=curl_ref,
         )
 
-    return ApiToolResult(
-        status_code=response.status_code,
-        body=response.body,
-        curl=curl_ref,
-    )
+    return ApiToolResult(status_code=response.status_code, body=response.body, curl=curl_ref)
 
 
 @mcp.tool(
-    name="download_display_snapshot",
+    name="download_file",
     description=(
-        "[WalmartAds] Download a display snapshot file (report or entity) from the "
-        "poll `details` URL — display ad_type only. Follows HTTP redirects (relative "
-        "Location keeps init auth headers; cross-host drops Bearer). Result includes `urls` "
-        "(comma-separated hop path). Requires authenticated Walmart API headers."
+        "[Walmart] Download a report, label, or snapshot from an authenticated endpoint. "
+        "Give a full url (e.g. the `details` URL from a display snapshot poll or a "
+        "Marketplace report response), or operation_id, or api with method and path. "
+        "With dest_path the bytes are written there; without it they are gunzipped when "
+        "gzipped and cached, and the result carries cached_at "
+        "(wmt://responses/{request_id}). Follows redirects, keeping auth headers on a "
+        "relative or same-host Location and dropping credentials cross-host. The result "
+        "includes `urls`, the hop path."
     ),
-    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+    # Writes the downloaded bytes to a local path when dest_path is given, so
+    # not read-only; re-running against the same path converges.
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
+    ),
 )
-async def download_display_snapshot(
+async def download_file(
     region: Annotated[
         str,
-        Field(description="[WalmartAds] API region, e.g. US. Src: config."),
+        Field(description="[Walmart] Region label, e.g. us. Src: config."),
     ],
-    env: Annotated[
-        str,
-        Field(description="[WalmartAds] Target environment — production or staging. Src: config."),
-    ],
-    download_url: Annotated[
+    environment: Annotated[
         str,
         Field(
-            description=("[WalmartAds] Full download URL from the snapshot poll `details` field."),
+            description=(
+                "[Walmart] Target environment — production, staging, or sandbox, per "
+                "platform. Src: config."
+            )
         ),
     ],
-    advertiser_id: Annotated[
-        int,
-        Field(description="[WalmartAds] The advertiser ID used when creating the snapshot."),
-    ],
-    tenant: Annotated[
+    platform: Annotated[
         str | None,
         Field(
             default=None,
             description=(
-                "[WalmartAds] WAP tenant for non-US, e.g. WMT_CA, WMT_MX, WBD_OD. "
-                "Omit for US. Sent as wap-tenant-id."
+                "[Walmart] Platform to authenticate as — connect, samsclub, or marketplace. "
+                "Required with a bare url; otherwise inferred from operation_id or api. "
+                "Src: apis."
             ),
         ),
     ] = None,
+    url: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[Walmart] Absolute URL to fetch, e.g. a snapshot or report URL returned "
+                "by a previous call."
+            ),
+        ),
+    ] = None,
+    operation_id: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="[Walmart] Operation id, qualified or bare. Src: operations.",
+        ),
+    ] = None,
+    api: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="[Walmart] Api to call when using method+path. Src: apis.",
+        ),
+    ] = None,
+    method: Annotated[
+        str | None,
+        Field(default=None, description="[Walmart] HTTP method when using path. Defaults to GET."),
+    ] = None,
+    path: Annotated[
+        str | None,
+        Field(default=None, description="[Walmart] API path when not using url."),
+    ] = None,
+    path_params: Annotated[
+        dict[str, Any] | None,
+        Field(default=None, description="[Walmart] Values for {placeholders} in path."),
+    ] = None,
+    params: Annotated[
+        dict[str, Any] | None,
+        Field(default=None, description="[Walmart] Query string parameters as a JSON object."),
+    ] = None,
+    dest_path: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "[Walmart] Local path to write the bytes to. Omit to gunzip and cache the "
+                "payload instead, readable at the returned cached_at resource."
+            ),
+        ),
+    ] = None,
+    advertiser_id: Annotated[
+        int | None,
+        Field(
+            default=None,
+            description=(
+                "[Walmart] Required on marketplace (selects the credential) and by display "
+                "snapshot downloads, where it is sent as X-Advertiser-ID and as the "
+                "advertiserId query parameter. Src: config."
+            ),
+        ),
+    ] = None,
+    tenant: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="[Walmart] WAP tenant for non-US connect regions. Sent as wap-tenant-id.",
+        ),
+    ] = None,
 ) -> DownloadToolResult:
-    if region not in config.regions:
-        available = ", ".join(config.regions.keys())
-        msg = f"region '{region}' not found in config. Available: {available}"
-        return DownloadToolResult(error=msg)
+    operation: discovery.Operation | None = None
+    resolved_api = api
+    resolved_method = method or "GET"
+    resolved_path = path
 
-    region_envs = config.regions[region]
-    if env not in region_envs:
-        available = ", ".join(region_envs.keys())
-        msg = f"env '{env}' not found for region '{region}'. Available: {available}"
-        return DownloadToolResult(error=msg)
+    if operation_id is not None:
+        try:
+            operation = discovery.get_operation(operation_id, api=api)
+        except SpecError as e:
+            return DownloadToolResult(error=str(e))
+        resolved_api = operation.api
+        resolved_method = operation.method
+        resolved_path = operation.path
 
-    env_cfg = region_envs[env]
+    if url is None and not resolved_path:
+        return DownloadToolResult(
+            error="provide url, or operation_id, or api with method and path."
+        )
 
-    response = await download_file(
-        cfg=env_cfg,
-        url=download_url,
-        params={"advertiserId": advertiser_id},
-        advertiser_id=advertiser_id,
-        tenant=tenant,
-    )
+    if resolved_api is not None:
+        platform = resolved_api.partition(":")[0]
+    if platform is None:
+        return DownloadToolResult(
+            error=(
+                "provide platform when downloading from a bare url "
+                f"(one of: {', '.join(PLATFORM_IDS)})"
+            )
+        )
+
+    try:
+        cfg = config().env(platform, region, environment)
+    except ConfigError as e:
+        return DownloadToolResult(error=str(e))
+
+    # Display snapshot URLs need the advertiser as a query parameter too.
+    if url is not None and advertiser_id is not None and isinstance(cfg, SignatureEnv):
+        params = {"advertiserId": advertiser_id, **(params or {})}
+
+    try:
+        response = await client.download(
+            cfg=cfg,
+            api=resolved_api,
+            url=url,
+            method=resolved_method,
+            path=resolved_path,
+            operation=operation,
+            params=params,
+            path_params=path_params,
+            advertiser_id=advertiser_id,
+            tenant=tenant,
+            tokens=tokens,
+        )
+    except (AuthError, RequestError, SpecError, ConfigError) as e:
+        return DownloadToolResult(error=str(e))
 
     if response.status_code != 200:
-        last_url = response.urls.rsplit(",", 1)[-1]
+        last_url = response.urls.rsplit("→", 1)[-1].strip()
         return DownloadToolResult(
             status_code=response.status_code,
             urls=response.urls,
             error=f"Download failed: HTTP {response.status_code} at {last_url}",
         )
 
+    if dest_path is not None:
+        target = Path(dest_path).expanduser()
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(response.content)
+        except OSError as e:
+            return DownloadToolResult(
+                status_code=response.status_code,
+                urls=response.urls,
+                error=f"cannot write {target}: {e}",
+            )
+        return DownloadToolResult(
+            status_code=response.status_code,
+            path=str(target),
+            bytes_written=len(response.content),
+            content_type=response.content_type,
+            urls=response.urls,
+        )
+
     try:
         text = gzip.decompress(response.content).decode()
-    except gzip.BadGzipFile:
-        text = response.content.decode()
+    except (gzip.BadGzipFile, UnicodeDecodeError):
+        try:
+            text = response.content.decode()
+        except UnicodeDecodeError:
+            return DownloadToolResult(
+                status_code=response.status_code,
+                size_bytes=len(response.content),
+                content_type=response.content_type,
+                urls=response.urls,
+                error="payload is binary — pass dest_path to write it to a file.",
+            )
 
-    cache.put(response.request_id, text)
+    cache().put(response.request_id, text)
     return DownloadToolResult(
         status_code=response.status_code,
         size_bytes=len(text.encode()),
-        cached_at=f"wmc://responses/{response.request_id}",
+        content_type=response.content_type,
+        cached_at=f"wmt://responses/{response.request_id}",
         urls=response.urls,
     )
 
 
-# ── discovery + refresh tools ────────────────────────────────────────────────
-
-
-@mcp.tool(
-    name="list_endpoints",
-    description="[WalmartAds] List OpenAPI operations for an ad_type with optional filters.",
-    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
-)
-async def list_endpoints(
-    ad_type: Annotated[
-        str,
-        Field(description="[WalmartAds] API family — search or display. Src: config."),
-    ],
-    query: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description=(
-                "[WalmartAds] Case-insensitive substring match on operationId, path, or summary."
-            ),
-        ),
-    ] = None,
-    tag: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="[WalmartAds] Filter to operations whose OpenAPI tags include this value.",
-        ),
-    ] = None,
-    method: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="[WalmartAds] Filter by HTTP verb — GET, POST, PUT, PATCH, or DELETE.",
-        ),
-    ] = None,
-) -> dict[str, Any]:
-    try:
-        endpoints = discovery.list_endpoints(ad_type.lower(), query=query, tag=tag, method=method)
-    except SpecError as e:
-        return {"error": str(e)}
-    return {"ad_type": ad_type.lower(), "count": len(endpoints), "endpoints": endpoints}
-
-
-@mcp.tool(
-    name="describe_endpoint",
-    description=(
-        "[WalmartAds] Describe one OpenAPI operation with its schema closure. "
-        "Returns the operation plus every components.schemas entry reachable from "
-        "it, so request bodies and responses can be built without the full spec."
-    ),
-    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
-)
-async def describe_endpoint(
-    ad_type: Annotated[
-        str,
-        Field(description="[WalmartAds] API family — search or display. Src: config."),
-    ],
-    operation_id: Annotated[
-        str,
-        Field(description="[WalmartAds] Spec operation id. Src: operations."),
-    ],
-) -> dict[str, Any]:
-    try:
-        return discovery.describe_endpoint(ad_type.lower(), operation_id)
-    except SpecError as e:
-        return {"error": str(e)}
+# ── refresh ────────────────────────────────────────────────────────────────────
 
 
 @mcp.tool(
     name="refresh_specs",
     description=(
-        "[WalmartAds] Refresh bundled OpenAPI specs from ReadMe's public registry. "
-        "Re-fetches the latest spec JSON into a user cache that takes precedence "
-        "over the bundled copy. Omit spec_id to refresh all specs."
+        "[Walmart] Refresh bundled OpenAPI specs from their upstream sources into the "
+        "user cache, which then takes precedence over the bundled copies. Omit api to "
+        "refresh all 33."
     ),
     # Writes the user spec cache: an update, not a delete — re-running it
-    # against the same registry state converges on the same cache.
+    # against the same upstream state converges on the same cache.
     annotations=ToolAnnotations(
         read_only_hint=False,
         destructive_hint=False,
@@ -439,23 +738,23 @@ async def describe_endpoint(
     ),
 )
 async def refresh_specs(
-    spec_id: Annotated[
+    api: Annotated[
         str | None,
         Field(
             default=None,
             description=(
-                "[WalmartAds] One of search/sponsored-products, "
-                "display/display-rest-api, display/ad-id-token-generation, "
-                "display/conversion-rest-api. Src: specs."
+                "[Walmart] Refresh only this api, e.g. marketplace:order-management or "
+                "connect:search. Omit to refresh all. Src: apis."
             ),
         ),
     ] = None,
 ) -> dict[str, Any]:
     try:
-        results = await specs.refresh(spec_id)
+        results = await specs.refresh(api)
     except SpecError as e:
         return {"error": str(e)}
-    return {"refreshed": results}
+    written = sum(1 for r in results if r.get("status") == "written")
+    return {"refreshed": written, "total": len(results), "results": results}
 
 
 # ── entry point ────────────────────────────────────────────────────────────────

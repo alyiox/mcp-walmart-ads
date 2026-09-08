@@ -1,48 +1,81 @@
 {
   "response_cache_ttl": 3600,
   "truncate_threshold": 1024,
-  "regions": {
-    "US": {
-      "production": {
-        "consumer_id": "your-consumer-id",
-        "private_key": "./keys/us/prod.pem",
-        "private_key_version": "1",
-        "bearer_token": "your-bearer-token",
-        "base_urls": {
-          "search": "https://developer.api.walmart.com/api-proxy/service/WPA/Api/v1",
-          "display": "https://developer.api.walmart.com/api-proxy/service/display/api/v1"
-        }
-      },
-      "staging": {
-        "consumer_id": "your-staging-consumer-id",
-        "private_key": "./keys/us/staging.pem",
-        "private_key_version": "1",
-        "bearer_token": "your-staging-bearer-token",
-        "base_urls": {
-          "search": "https://developer.api.stg.walmart.com/api-proxy/service/WPA/Api/v1",
-          "display": "https://developer.api.us.stg.walmart.com/api-proxy/service/display/api/v1"
+  "platforms": {
+    "connect": {
+      "regions": {
+        "US": {
+          "production": {
+            "consumer_id": "your-consumer-id",
+            "private_key": "./keys/connect/us-prod.pem",
+            "private_key_version": "1",
+            "bearer_token": "your-bearer-token",
+            "base_urls": {
+              "search": "https://developer.api.walmart.com/api-proxy/service/WPA/Api/v1",
+              "display": "https://developer.api.walmart.com/api-proxy/service/display/api/v1"
+            }
+          },
+          "staging": {
+            "consumer_id": "your-staging-consumer-id",
+            "private_key": "./keys/connect/us-staging.pem",
+            "private_key_version": "1",
+            "bearer_token": "your-staging-bearer-token",
+            "base_urls": {
+              "search": "https://developer.api.stg.walmart.com/api-proxy/service/WPA/Api/v1",
+              "display": "https://developer.api.us.stg.walmart.com/api-proxy/service/display/api/v1"
+            }
+          }
         }
       }
     },
-    "CA": {
-      "production": {
-        "consumer_id": "your-ca-consumer-id",
-        "private_key": "./keys/ca/prod.pem",
-        "private_key_version": "1",
-        "bearer_token": "your-ca-bearer-token",
-        "base_urls": {
-          "search": "https://developer.api.walmart.com/api-proxy/service/WPA/Api/v1",
-          "display": "https://developer.api.walmart.com/api-proxy/service/display/api/v1"
+    "samsclub": {
+      "regions": {
+        "US": {
+          "production": {
+            "consumer_id": "your-consumer-id",
+            "private_key": "./keys/samsclub/us-prod.pem",
+            "private_key_version": "1",
+            "bearer_token": "your-bearer-token",
+            "base_urls": {
+              "sponsored": "https://developer.api.us.walmart.com/api-proxy/service/sp/api-sams/v1"
+            }
+          },
+          "sandbox": {
+            "consumer_id": "your-sandbox-consumer-id",
+            "private_key": "./keys/samsclub/us-sandbox.pem",
+            "private_key_version": "1",
+            "bearer_token": "your-sandbox-bearer-token",
+            "base_urls": {
+              "sponsored": "https://developer.api.us.stg.walmart.com/api-proxy/service/sp/api-sams/v1"
+            }
+          }
         }
-      },
-      "staging": {
-        "consumer_id": "your-ca-staging-consumer-id",
-        "private_key": "./keys/ca/staging.pem",
-        "private_key_version": "1",
-        "bearer_token": "your-ca-staging-bearer-token",
-        "base_urls": {
-          "search": "https://developer.api.stg.walmart.com/api-proxy/service/WPA/Api/v1",
-          "display": "https://developer.api.us.stg.walmart.com/api-proxy/service/display/api/v1"
+      }
+    },
+    "marketplace": {
+      "regions": {
+        "US": {
+          "production": {
+            "credentials": [
+              {
+                "client_id": "your-client-id",
+                "client_secret": "your-client-secret",
+                "advertisers": [
+                  { "id": 7060158, "partner_id": "10001234" },
+                  { "id": 7060159 }
+                ]
+              }
+            ]
+          },
+          "sandbox": {
+            "credentials": [
+              {
+                "client_id": "your-sandbox-client-id",
+                "client_secret": "your-sandbox-client-secret",
+                "advertisers": [{ "id": 7060158 }]
+              }
+            ]
+          }
         }
       }
     }

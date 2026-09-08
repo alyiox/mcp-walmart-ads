@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.alyiox/mcp-walmart-ads",
-  "title": "Walmart Connect Advertising APIs",
-  "description": "MCP server for Walmart Connect Ads APIs (Sponsored Search + Display)",
+  "title": "Walmart APIs",
+  "description": "MCP server for Walmart Connect Ads, Sam's Club Sponsored Ads, and Walmart Marketplace APIs",
   "repository": {
     "url": "https://github.com/alyiox/mcp-walmart-ads",
     "source": "github"

@@ -1,0 +1,947 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Sam's Club Sponsored Ads API",
+    "description": "Hand-authored partial OpenAPI spec for the Sam's Club Sponsored Ads (Sam's Advertising Partners) API, built from the developer.samsclub.com reference docs.\n\nSandbox URL: https://developer.api.us.stg.walmart.com/api-proxy/service/sp/api-sams/v1\nProduction URL: https://developer.api.us.walmart.com/api-proxy/service/sp/api-sams/v1 (confirm from partner onboarding docs)\n\nAuthentication uses Walmart-family RSA-SHA256 request signing: WM_CONSUMER.ID, WM_SEC.AUTH_SIGNATURE (Base64 RSA-SHA256), WM_SEC.KEY_VERSION, WM_CONSUMER.INTIMESTAMP (Unix epoch ms), plus Authorization: Bearer <token>. The MCP client injects these headers automatically.\n\nThis spec is partial by design; endpoints not yet modeled (SBA profiles, media, reviews, api-usage, entity/audit snapshots, alerts & recommendations) can still be called via raw method+path.",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "https://developer.api.us.stg.walmart.com/api-proxy/service/sp/api-sams/v1",
+      "description": "Sandbox"
+    }
+  ],
+  "security": [
+    { "BearerAuth": [] },
+    { "consumer_id": [] },
+    { "timestamp": [] },
+    { "key_version": [] },
+    { "auth_signature": [] }
+  ],
+  "tags": [
+    { "name": "Campaigns", "description": "Campaign management" },
+    { "name": "Statistics", "description": "Near-real-time campaign metrics and budget cap-out" },
+    { "name": "Ad Groups", "description": "Ad group management" },
+    { "name": "Ad Items", "description": "Ad item (product) management within ad groups" },
+    { "name": "Catalog Item Search", "description": "Search the advertiser catalog for items" },
+    { "name": "Keywords", "description": "Keyword management, suggestions, and analytics" },
+    { "name": "Negative Keywords", "description": "Negative keyword management" },
+    { "name": "Placements", "description": "Campaign placement management" },
+    { "name": "Bid Multipliers", "description": "Placement and platform bid multipliers" },
+    { "name": "Snapshot Reports v1", "description": "Asynchronous performance report snapshots (v1)" },
+    { "name": "Snapshot Reports v2", "description": "Asynchronous performance report snapshots (v2, selectable metrics)" },
+    { "name": "Latest Report Date", "description": "Most recent date reports are available" }
+  ],
+  "paths": {
+    "/api/v1/campaigns": {
+      "get": {
+        "operationId": "CampaignList",
+        "summary": "List a specific campaign or all campaigns for an advertiser (excludes deleted)",
+        "tags": ["Campaigns"],
+        "parameters": [
+          { "name": "advertiserId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Advertiser ID" },
+          { "name": "campaignId", "in": "query", "required": false, "schema": { "type": "integer", "format": "int64" }, "description": "Specific campaign ID to retrieve" },
+          { "name": "filter[name]", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Campaign name to search" },
+          { "name": "filter[lastModifiedDate]", "in": "query", "required": false, "schema": { "type": "string", "format": "date" }, "description": "Campaigns modified on/after date (yyyy-mm-dd)" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of campaigns",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Campaign" } } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "CampaignCreate",
+        "summary": "Create new campaigns in draft state (max 50 per batch)",
+        "tags": ["Campaigns"],
+        "parameters": [
+          { "name": "advertiserId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Advertiser ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CampaignCreate" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-campaign create result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CampaignResult" } } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "CampaignUpdate",
+        "summary": "Update existing campaigns (max 50 per batch)",
+        "tags": ["Campaigns"],
+        "parameters": [
+          { "name": "advertiserId", "in": "query", "required": false, "schema": { "type": "integer", "format": "int64" }, "description": "Advertiser ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CampaignUpdate" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-campaign update result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CampaignResult" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/delete": {
+      "put": {
+        "operationId": "CampaignDelete",
+        "summary": "Delete scheduled-but-not-live campaigns (max 50 per batch)",
+        "tags": ["Campaigns"],
+        "parameters": [
+          { "name": "advertiserId", "in": "query", "required": false, "schema": { "type": "integer", "format": "int64" }, "description": "Advertiser ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object", "required": ["campaignId"], "properties": { "campaignId": { "type": "integer", "format": "int64" } } } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-campaign delete result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CampaignResult" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/stats": {
+      "get": {
+        "operationId": "CampaignStats",
+        "summary": "Near-real-time performance metrics and daily budget cap-out for the current day",
+        "tags": ["Statistics"],
+        "parameters": [
+          { "name": "advertiserId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Advertiser ID" },
+          { "name": "campaignId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Campaign ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Campaign stats",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CampaignStats" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/adGroups": {
+      "get": {
+        "operationId": "AdGroupList",
+        "summary": "List ad groups for an advertiser (optionally a single campaign)",
+        "tags": ["Ad Groups"],
+        "parameters": [
+          { "name": "advertiserId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Advertiser ID" },
+          { "name": "campaignId", "in": "query", "required": false, "schema": { "type": "integer", "format": "int64" }, "description": "Campaign ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of ad groups",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdGroup" } } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "AdGroupCreate",
+        "summary": "Create ad groups within a campaign",
+        "tags": ["Ad Groups"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdGroupCreate" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-ad-group create result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdGroupResult" } } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "AdGroupUpdate",
+        "summary": "Update ad groups (enable, disable, or delete)",
+        "tags": ["Ad Groups"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdGroupUpdate" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-ad-group update result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdGroupResult" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/adItems": {
+      "get": {
+        "operationId": "AdItemList",
+        "summary": "List all ad items added to a campaign",
+        "tags": ["Ad Items"],
+        "parameters": [
+          { "name": "campaignId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Campaign ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of ad items",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdItem" } } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "AdItemCreate",
+        "summary": "Add ad items to an ad group within a campaign",
+        "tags": ["Ad Items"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdItemUpsert" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-ad-item create result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdItemResult" } } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "AdItemUpdate",
+        "summary": "Update an existing ad item in an ad group",
+        "tags": ["Ad Items"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdItemUpsert" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-ad-item update result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdItemResult" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/itemSearch": {
+      "post": {
+        "operationId": "ItemSearch",
+        "summary": "Search samsclub.com catalog items by text or item IDs (max 200 per call)",
+        "tags": ["Catalog Item Search"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ItemSearchRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Matching catalog items",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ItemSearchResult" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/keywords": {
+      "get": {
+        "operationId": "KeywordList",
+        "summary": "List all keywords for a campaign",
+        "tags": ["Keywords"],
+        "parameters": [
+          { "name": "campaignId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Campaign ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of keywords",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Keyword" } } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "KeywordCreate",
+        "summary": "Add keywords to a manual (keyword-bid) campaign",
+        "tags": ["Keywords"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KeywordCreate" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-keyword create result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KeywordResult" } } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "KeywordUpdate",
+        "summary": "Update state and/or bid for existing keywords",
+        "tags": ["Keywords"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KeywordUpdate" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-keyword update result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KeywordResult" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/keyword_suggestions": {
+      "get": {
+        "operationId": "KeywordSuggestions",
+        "summary": "Suggested keywords for the items in an ad group, with relevancy scores",
+        "tags": ["Keywords"],
+        "parameters": [
+          { "name": "adGroupId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Ad group ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Suggested keywords",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KeywordSuggestion" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/keywordAnalytics": {
+      "post": {
+        "operationId": "KeywordAnalytics",
+        "summary": "Keyword research/analysis based on item performance data",
+        "tags": ["Keywords"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KeywordAnalyticsRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Keyword analytics rows",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KeywordAnalyticsResult" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/negative_keywords": {
+      "get": {
+        "operationId": "NegativeKeywordList",
+        "summary": "List all negative keywords for a campaign",
+        "tags": ["Negative Keywords"],
+        "parameters": [
+          { "name": "advertiserId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Advertiser ID" },
+          { "name": "campaignId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Campaign ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of negative keywords",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/NegativeKeyword" } } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "NegativeKeywordCreate",
+        "summary": "Add negative keywords to a campaign (max 50 per request; 1000 total)",
+        "tags": ["Negative Keywords"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/NegativeKeywordCreate" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-keyword create result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KeywordResult" } } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "NegativeKeywordUpdate",
+        "summary": "Update the state of existing negative keywords",
+        "tags": ["Negative Keywords"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/NegativeKeywordUpdate" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-keyword update result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KeywordResult" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/placements": {
+      "get": {
+        "operationId": "PlacementList",
+        "summary": "List all placements for a campaign",
+        "tags": ["Placements"],
+        "parameters": [
+          { "name": "campaignId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Campaign ID" },
+          { "name": "advertiserId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Advertiser ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of placements",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Placement" } } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "PlacementCreate",
+        "summary": "Add placements to a keyword-bid campaign",
+        "tags": ["Placements"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlacementMutation" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-campaign placement result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CampaignResult" } } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "PlacementUpdate",
+        "summary": "Update placements for a keyword-bid campaign",
+        "tags": ["Placements"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlacementMutation" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-campaign placement result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CampaignResult" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/multipliers/placement": {
+      "get": {
+        "operationId": "PlacementMultiplierList",
+        "summary": "List placement bid multipliers for a campaign",
+        "tags": ["Bid Multipliers"],
+        "parameters": [
+          { "name": "campaignId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Campaign ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Placement bid multipliers",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlacementMultiplier" } } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "PlacementMultiplierCreate",
+        "summary": "Create placement bid multipliers for a campaign",
+        "tags": ["Bid Multipliers"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlacementMultiplier" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-multiplier result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlacementMultiplierResult" } } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "PlacementMultiplierUpdate",
+        "summary": "Update placement bid multipliers for a campaign",
+        "tags": ["Bid Multipliers"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlacementMultiplier" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-multiplier result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlacementMultiplierResult" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/multipliers/platform": {
+      "get": {
+        "operationId": "PlatformMultiplierList",
+        "summary": "List platform bid multipliers for a campaign",
+        "tags": ["Bid Multipliers"],
+        "parameters": [
+          { "name": "campaignId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Campaign ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Platform bid multipliers",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlatformMultiplier" } } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "PlatformMultiplierCreate",
+        "summary": "Create platform bid multipliers (Desktop, Mobile, App)",
+        "tags": ["Bid Multipliers"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlatformMultiplier" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-multiplier result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlatformMultiplierResult" } } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "PlatformMultiplierUpdate",
+        "summary": "Update platform bid multipliers",
+        "tags": ["Bid Multipliers"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlatformMultiplier" } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-multiplier result",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlatformMultiplierResult" } } } }
+          }
+        }
+      }
+    },
+    "/api/v1/snapshot/report": {
+      "post": {
+        "operationId": "SnapshotReportCreateV1",
+        "summary": "Request an asynchronous performance report snapshot (v1)",
+        "tags": ["Snapshot Reports v1"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SnapshotReportRequestV1" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot job accepted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SnapshotResult" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/snapshot": {
+      "get": {
+        "operationId": "SnapshotGetV1",
+        "summary": "Poll a v1 snapshot's status and get its download URL when done",
+        "tags": ["Snapshot Reports v1"],
+        "parameters": [
+          { "name": "advertiserId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Advertiser ID" },
+          { "name": "snapshotId", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Snapshot ID returned by the create call" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot status (details carries the file URL when jobStatus is done)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SnapshotResult" } } }
+          }
+        }
+      }
+    },
+    "/api/v2/snapshot/report": {
+      "post": {
+        "operationId": "SnapshotReportCreateV2",
+        "summary": "Request an asynchronous performance report snapshot with selectable metrics (v2)",
+        "tags": ["Snapshot Reports v2"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SnapshotReportRequestV2" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot job accepted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SnapshotResult" } } }
+          }
+        }
+      }
+    },
+    "/api/v2/snapshot": {
+      "get": {
+        "operationId": "SnapshotGetV2",
+        "summary": "Poll a v2 snapshot's status and get its download URL when done (90-day lookback)",
+        "tags": ["Snapshot Reports v2"],
+        "parameters": [
+          { "name": "advertiserId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Advertiser ID" },
+          { "name": "snapshotId", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Snapshot ID returned by the create call" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot status (details carries the file URL when jobStatus is done)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SnapshotResult" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/latestReportDate": {
+      "get": {
+        "operationId": "LatestReportDate",
+        "summary": "Get the most recent date for which reports are available",
+        "tags": ["Latest Report Date"],
+        "responses": {
+          "200": {
+            "description": "Latest report date",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/LatestReportDate" } } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": { "type": "http", "scheme": "bearer", "description": "Environment-specific auth token (Authorization: Bearer <token>)." },
+      "consumer_id": { "type": "apiKey", "in": "header", "name": "WM_CONSUMER.ID", "description": "Consumer ID provided by Sam's Club." },
+      "timestamp": { "type": "apiKey", "in": "header", "name": "WM_CONSUMER.INTIMESTAMP", "description": "Unix epoch (ms) timestamp the signature was generated for." },
+      "key_version": { "type": "apiKey", "in": "header", "name": "WM_SEC.KEY_VERSION", "description": "Signing key version." },
+      "auth_signature": { "type": "apiKey", "in": "header", "name": "WM_SEC.AUTH_SIGNATURE", "description": "Base64 RSA-SHA256 request signature." }
+    },
+    "schemas": {
+      "MutationResult": {
+        "type": "object",
+        "description": "Common per-item mutation result envelope.",
+        "properties": {
+          "code": { "type": "string", "enum": ["success", "failure"] },
+          "details": { "type": "string", "description": "Error details when code is failure." }
+        }
+      },
+      "CampaignResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MutationResult" },
+          { "type": "object", "properties": { "campaignId": { "type": "integer", "format": "int64" } } }
+        ]
+      },
+      "AdGroupResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MutationResult" },
+          { "type": "object", "properties": { "adGroupId": { "type": "integer", "format": "int64" } } }
+        ]
+      },
+      "AdItemResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MutationResult" },
+          { "type": "object", "properties": { "adItemId": { "type": "integer", "format": "int64" } } }
+        ]
+      },
+      "KeywordResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MutationResult" },
+          { "type": "object", "properties": { "keywordId": { "type": "integer", "format": "int64" }, "keywordText": { "type": "string" } } }
+        ]
+      },
+      "PlacementMultiplierResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MutationResult" },
+          { "type": "object", "properties": { "placementMultiplierId": { "type": "integer", "format": "int64" } } }
+        ]
+      },
+      "PlatformMultiplierResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MutationResult" },
+          { "type": "object", "properties": { "platformMultiplierId": { "type": "integer", "format": "int64" } } }
+        ]
+      },
+      "Campaign": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "advertiserId": { "type": "integer", "format": "int64" },
+          "name": { "type": "string", "maxLength": 255 },
+          "campaignType": { "type": "string", "enum": ["sponsoredProducts", "sba"] },
+          "targetingType": { "type": "string", "enum": ["manual", "auto"] },
+          "status": { "type": "string", "enum": ["enabled", "paused", "completed", "extend", "proposal"] },
+          "budgetType": { "type": "string", "enum": ["daily", "total", "both"] },
+          "startDate": { "type": "string", "format": "date" },
+          "endDate": { "type": "string", "format": "date" },
+          "totalBudget": { "type": "number", "format": "double" },
+          "dailyBudget": { "type": "number", "format": "double" },
+          "rollover": { "type": "boolean" }
+        }
+      },
+      "CampaignCreate": {
+        "type": "object",
+        "required": ["advertiserId"],
+        "properties": {
+          "advertiserId": { "type": "integer", "format": "int64" },
+          "name": { "type": "string", "maxLength": 255, "description": "Unique campaign name." },
+          "campaignType": { "type": "string", "enum": ["sponsoredProducts", "sba"] },
+          "targetingType": { "type": "string", "enum": ["manual", "auto"] },
+          "status": { "type": "string", "enum": ["enabled", "paused", "completed", "extend", "proposal"] },
+          "budgetType": { "type": "string", "enum": ["daily", "total", "both"] },
+          "startDate": { "type": "string", "format": "date" },
+          "endDate": { "type": "string", "format": "date", "description": "Use 9999-12-30 for indefinite." },
+          "totalBudget": { "type": "number", "format": "double" },
+          "dailyBudget": { "type": "number", "format": "double" },
+          "rollover": { "type": "boolean", "description": "Currently accepts only true." }
+        }
+      },
+      "CampaignUpdate": {
+        "type": "object",
+        "required": ["campaignId", "name", "status"],
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["enabled", "paused", "completed", "extend", "proposal"] }
+        }
+      },
+      "CampaignStats": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "todayAdSpend": { "type": "number", "format": "double" },
+          "asOf": { "type": "string", "description": "PST capture timestamp (24-hour)." },
+          "adGroupId": { "type": "integer", "format": "int64", "description": "Deprecated; returns -1." },
+          "dailyOutOfBudgetDatetime": { "type": "string", "nullable": true },
+          "dailyRemainingBudget": { "type": "number", "format": "double", "nullable": true },
+          "todayImpressions": { "type": "integer", "format": "int64" },
+          "todayClicks": { "type": "integer", "format": "int64" }
+        }
+      },
+      "AdGroup": {
+        "type": "object",
+        "properties": {
+          "adGroupId": { "type": "integer", "format": "int64" },
+          "campaignId": { "type": "integer", "format": "int64" },
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["enabled", "disabled", "deleted"] }
+        }
+      },
+      "AdGroupCreate": {
+        "type": "object",
+        "required": ["campaignId"],
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["enabled", "disabled"] }
+        }
+      },
+      "AdGroupUpdate": {
+        "type": "object",
+        "required": ["adGroupId"],
+        "properties": {
+          "adGroupId": { "type": "integer", "format": "int64" },
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["enabled", "disabled", "deleted"] }
+        }
+      },
+      "AdItem": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "adGroupId": { "type": "integer", "format": "int64" },
+          "adItemId": { "type": "integer", "format": "int64" },
+          "itemId": { "type": "string" },
+          "bid": { "type": "number", "format": "double" },
+          "status": { "type": "string" },
+          "name": { "type": "string" },
+          "itemImageUrl": { "type": "string" },
+          "itemPageUrl": { "type": "string" },
+          "reviewStatus": { "type": "string" },
+          "reviewReason": { "type": "string" }
+        }
+      },
+      "AdItemUpsert": {
+        "type": "object",
+        "required": ["campaignId", "adGroupId", "itemId", "bid", "status"],
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "adGroupId": { "type": "integer", "format": "int64" },
+          "itemId": { "type": "string" },
+          "bid": { "type": "number", "format": "double" },
+          "status": { "type": "string", "enum": ["enabled", "disabled", "deleted"] }
+        }
+      },
+      "ItemSearchRequest": {
+        "type": "object",
+        "required": ["advertiserId"],
+        "description": "Provide either searchText or searchItemIds, not both.",
+        "properties": {
+          "advertiserId": { "type": "integer", "format": "int64" },
+          "searchText": { "type": "string", "description": "Terms to match item name/description." },
+          "searchItemIds": { "type": "array", "items": { "type": "string" }, "description": "Primary or variant item IDs (max 200)." }
+        }
+      },
+      "ItemSearchResult": {
+        "type": "object",
+        "properties": {
+          "itemId": { "type": "string" },
+          "itemName": { "type": "string" },
+          "itemImageUrl": { "type": "string" },
+          "itemPageUrl": { "type": "string" },
+          "suggestedBid": { "type": "number", "format": "double" },
+          "variantItems": { "type": "array", "items": { "$ref": "#/components/schemas/VariantItem" } }
+        }
+      },
+      "VariantItem": {
+        "type": "object",
+        "properties": {
+          "variantItemId": { "type": "string" },
+          "variantItemName": { "type": "string" },
+          "variantImageUrl": { "type": "string" }
+        }
+      },
+      "Keyword": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "adGroupId": { "type": "integer", "format": "int64" },
+          "keywordId": { "type": "integer", "format": "int64" },
+          "keywordText": { "type": "string" },
+          "matchType": { "type": "string", "enum": ["exact", "phrase", "broad"] },
+          "bid": { "type": "number", "format": "double" },
+          "state": { "type": "string", "enum": ["Enabled", "Paused", "Archived"] },
+          "status": { "type": "string", "enum": ["approved", "pending", "rejected"] }
+        }
+      },
+      "KeywordCreate": {
+        "type": "object",
+        "required": ["campaignId", "adGroupId", "matchType", "bid", "state", "keywordText"],
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "adGroupId": { "type": "integer", "format": "int64" },
+          "matchType": { "type": "string", "enum": ["exact", "phrase", "broad"] },
+          "bid": { "type": "number", "format": "double", "description": "CPC in dollars." },
+          "state": { "type": "string", "enum": ["Enabled", "Paused", "Archived"] },
+          "keywordText": { "type": "string", "maxLength": 80 }
+        }
+      },
+      "KeywordUpdate": {
+        "type": "object",
+        "required": ["keywordId"],
+        "properties": {
+          "keywordId": { "type": "integer", "format": "int64" },
+          "bid": { "type": "number", "format": "double", "description": "CPC in dollars (max $100)." },
+          "state": { "type": "string", "enum": ["Enabled", "Paused", "Archived"] }
+        }
+      },
+      "KeywordSuggestion": {
+        "type": "object",
+        "properties": {
+          "score": { "type": "number", "format": "double" },
+          "query": { "type": "string" },
+          "suggestedBid": { "type": "number", "format": "double" },
+          "suggestedBidBroad": { "type": "number", "format": "double" },
+          "suggestedBidExact": { "type": "number", "format": "double" },
+          "suggestedBidPhrase": { "type": "number", "format": "double" }
+        }
+      },
+      "KeywordAnalyticsRequest": {
+        "type": "object",
+        "required": ["advertiserId", "itemIds"],
+        "properties": {
+          "advertiserId": { "type": "integer", "format": "int64" },
+          "itemIds": { "type": "array", "items": { "type": "string" }, "description": "Item IDs (max 10)." },
+          "adGroupId": { "type": "integer", "format": "int64" }
+        }
+      },
+      "KeywordAnalyticsResult": {
+        "type": "object",
+        "properties": {
+          "itemId": { "type": "string" },
+          "normalizedQuery": { "type": "string" },
+          "rawQuery": { "type": "string", "maxLength": 60 },
+          "itemKeywordFrequency": { "type": "string", "enum": ["High", "Medium", "Low"] },
+          "trafficKeywordFrequency": { "type": "string", "enum": ["High", "Medium", "Low"] }
+        }
+      },
+      "NegativeKeyword": {
+        "type": "object",
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "adGroupId": { "type": "integer", "format": "int64" },
+          "keywordId": { "type": "integer", "format": "int64" },
+          "keywordText": { "type": "string" },
+          "negativeMatchType": { "type": "string", "enum": ["exact", "phrase"] },
+          "state": { "type": "string", "enum": ["Enabled", "Paused", "Archived"] }
+        }
+      },
+      "NegativeKeywordCreate": {
+        "type": "object",
+        "required": ["campaignId", "adGroupId", "negativeMatchType", "state", "keywordText"],
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "adGroupId": { "type": "integer", "format": "int64" },
+          "negativeMatchType": { "type": "string", "enum": ["exact", "phrase"] },
+          "state": { "type": "string", "enum": ["Enabled", "Paused", "Archived"] },
+          "keywordText": { "type": "string" }
+        }
+      },
+      "NegativeKeywordUpdate": {
+        "type": "object",
+        "required": ["keywordId", "state"],
+        "properties": {
+          "keywordId": { "type": "integer", "format": "int64" },
+          "state": { "type": "string", "enum": ["Enabled", "Paused", "Archived"] }
+        }
+      },
+      "Placement": {
+        "type": "object",
+        "properties": {
+          "placement": { "type": "string", "enum": ["Search Carousel", "Item Buybox", "Item Carousel"] },
+          "status": { "type": "string", "enum": ["enabled", "paused", "archived"] }
+        }
+      },
+      "PlacementMutation": {
+        "type": "object",
+        "required": ["campaignId", "placements"],
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "placements": { "type": "array", "items": { "$ref": "#/components/schemas/Placement" } }
+        }
+      },
+      "PlacementMultiplier": {
+        "type": "object",
+        "required": ["campaignId", "placementType", "multiplier"],
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "placementType": { "type": "string", "enum": ["Search Ingrid", "Buy-Box"] },
+          "multiplier": { "type": "number", "format": "double", "minimum": 0, "maximum": 50000, "description": "Bid adjustment percentage." }
+        }
+      },
+      "PlatformMultiplier": {
+        "type": "object",
+        "required": ["campaignId", "platformType", "multiplier"],
+        "properties": {
+          "campaignId": { "type": "integer", "format": "int64" },
+          "platformType": { "type": "string", "enum": ["Desktop", "Mobile", "App"] },
+          "multiplier": { "type": "number", "format": "double", "minimum": 0, "maximum": 50000, "description": "Bid adjustment percentage." }
+        }
+      },
+      "SnapshotReportRequestV1": {
+        "type": "object",
+        "required": ["advertiserId", "startDate", "endDate", "attributionWindow", "reportType", "format"],
+        "properties": {
+          "advertiserId": { "type": "integer", "format": "int64" },
+          "startDate": { "type": "string", "format": "date", "description": "yyyy-MM-dd, not the current date." },
+          "endDate": { "type": "string", "format": "date", "description": "yyyy-MM-dd, not the current date." },
+          "attributionWindow": { "type": "string", "enum": ["days3", "days14", "days30", "allWith14", "all"] },
+          "reportType": { "type": "string", "enum": ["keyword", "adItem", "platform", "pageType", "adGroup", "brand", "category", "itemKeyword", "itemHealth", "itemHealthV2", "placement"] },
+          "extraFields": { "type": "string", "enum": ["date", "splitAttribution"] },
+          "format": { "type": "string", "enum": ["GZIP", "ZIP"] }
+        }
+      },
+      "SnapshotReportRequestV2": {
+        "type": "object",
+        "required": ["advertiserId", "reportType", "reportMetrics"],
+        "description": "Use either reportDate or the startDate/endDate pair, not both.",
+        "properties": {
+          "advertiserId": { "type": "integer", "format": "int64" },
+          "reportType": { "type": "string", "enum": ["keyword", "adItem", "platform", "pageType", "adGroup", "brand", "category", "placement", "videoCampaign", "videoKeywords"] },
+          "reportMetrics": { "type": "array", "items": { "type": "string" }, "description": "Selected dimensions and metrics; at least one dimension required." },
+          "reportDate": { "type": "string", "format": "date", "description": "Single snapshot date within the last 90 days." },
+          "startDate": { "type": "string", "format": "date", "description": "yyyy-MM-dd, not the current date." },
+          "endDate": { "type": "string", "format": "date", "description": "yyyy-MM-dd, not the current date." }
+        }
+      },
+      "SnapshotResult": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "enum": ["success", "failure"] },
+          "snapshotId": { "type": "string" },
+          "jobStatus": { "type": "string", "enum": ["pending", "processing", "done", "failed", "expired"] },
+          "details": { "type": "string", "description": "Snapshot file URL when done, or error message." }
+        }
+      },
+      "LatestReportDate": {
+        "type": "object",
+        "properties": {
+          "latestReportDate": { "type": "string", "format": "date", "description": "yyyy-MM-dd" }
+        }
+      }
+    }
+  }
+}

@@ -100,8 +100,8 @@ Assisted-by: Claude:claude-opus-4-6 coccinelle sparse
 
 Normative, high-density metadata: enough for correct tool and parameter selection, minimal to reduce token cost.
 
-* **The tool/parameter description MUST start with [WalmartAds], followed by a Verb-Object fragment**, e.g. `[WalmartAds] Execute an authenticated API request`, `[WalmartAds] List OpenAPI operations`, `[WalmartAds] Describe one OpenAPI operation`.
-* **Use tag-based lineage (Src: <Entity>) for parameters that refer to Walmart Ads MCP entities** (e.g. region/env → Src: config, operation id → Src: operations, spec id → Src: specs).
+* **The tool/parameter description MUST start with [Walmart], followed by a Verb-Object fragment**, e.g. `[Walmart] Execute an authenticated API request`, `[Walmart] List OpenAPI operations`, `[Walmart] Describe one OpenAPI operation`. The tag is platform-neutral because one server fronts Walmart Connect, Sam's Club, and Walmart Marketplace.
+* **Use tag-based lineage (Src: <Entity>) for parameters that refer to entities this server owns** (e.g. region/environment/advertiser_id → Src: config, operation id → Src: operations, api/platform → Src: apis).
 * **Every tool MUST declare `ToolAnnotations`**, mapped from the operation it performs:
   * Read → `read_only_hint=True`
   * Create → `read_only_hint=False`, `destructive_hint=False`, `idempotent_hint=False`

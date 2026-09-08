@@ -1,0 +1,3730 @@
+{
+  "info": {
+    "description": "AUTO-GENERATED candidate spec scraped from developer.samsclub.com. Do not edit by hand and do not load at runtime. Used only for doc-drift review; port real changes into sponsored-ads.openapi.json.",
+    "title": "Sam's Club Sponsored Ads API (candidate)",
+    "version": "candidate"
+  },
+  "openapi": "3.0.1",
+  "paths": {
+    "/api/v1/adGroup/media": {
+      "get": {
+        "operationId": "GET /api/v1/adGroup/media",
+        "parameters": [
+          {
+            "description": "The ID of the campaign for which media details should be returned",
+            "in": "query",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The ID of the adgroup for which media details should be returned",
+            "in": "query",
+            "name": "adGroupId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "ID of the ad group",
+                        "type": "integer"
+                      },
+                      "adGroupMediaId": {
+                        "description": "The value of adgroup media",
+                        "type": "integer"
+                      },
+                      "campaignId": {
+                        "description": "ID of the campaign associated with the respective ad group",
+                        "type": "integer"
+                      },
+                      "mediaId": {
+                        "description": "The unique Id of the media file",
+                        "type": "integer"
+                      },
+                      "reviewReason": {
+                        "description": "detail reason for failure scenario",
+                        "type": "string"
+                      },
+                      "reviewStatus": {
+                        "description": "Status of review. Possible values: pending, approved, rejected",
+                        "type": "string"
+                      },
+                      "status": {
+                        "description": "Status of campaign. Possible values: enabled, disabled",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve list of ad group media profile for a specific campaign",
+        "tags": [
+          "Ad Group Media"
+        ]
+      },
+      "post": {
+        "operationId": "POST /api/v1/adGroup/media",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adGroupId": {
+                    "description": "The ID of the ad group",
+                    "type": "integer"
+                  },
+                  "advertiserId": {
+                    "description": "ID of the advertiser, uploading video asset",
+                    "type": "integer"
+                  },
+                  "campaignId": {
+                    "description": "ID of the campaign to which this ad group belongs",
+                    "type": "integer"
+                  },
+                  "mediaId": {
+                    "description": "The unique Id of the media file",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "advertiserId",
+                  "campaignId",
+                  "adGroupId",
+                  "mediaId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupMediaId": {
+                        "description": "Id that is generated in response to receiving a request for media asset",
+                        "type": "integer"
+                      },
+                      "code": {
+                        "description": "Possible values of the response code: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if response code is failure",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "The adgroup media endpoint is used to create a video profile",
+        "tags": [
+          "Ad Group Media"
+        ]
+      }
+    },
+    "/api/v1/adGroups": {
+      "get": {
+        "operationId": "GET /api/v1/adGroups",
+        "parameters": [
+          {
+            "description": "The ID of the advertiser for whom the ad group(s) should be returned",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The ID of the campaign for which the ad group(s) should be returned",
+            "in": "query",
+            "name": "campaignId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "ID of the ad group",
+                        "type": "integer"
+                      },
+                      "campaignId": {
+                        "description": "ID of the campaign associated with the respective ad group",
+                        "type": "integer"
+                      },
+                      "name": {
+                        "description": "Name of the ad group",
+                        "type": "string"
+                      },
+                      "status": {
+                        "description": "Status of ad group Status values: enabled, disabled, deleted",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve all the ad group(s) for a specific campaign",
+        "tags": [
+          "Ad Groups"
+        ]
+      },
+      "post": {
+        "operationId": "POST /api/v1/adGroups",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "campaignId": {
+                    "description": "ID of the campaign to which this ad group belongs",
+                    "type": "integer"
+                  },
+                  "name": {
+                    "description": "The name of the campaign",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Status of the campaign",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "ID of the ad group",
+                        "type": "integer"
+                      },
+                      "code": {
+                        "description": "Possible values of response code: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if value of response code is failure",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Create new ad groups within a campaign for an advertiser",
+        "tags": [
+          "Ad Groups"
+        ]
+      },
+      "put": {
+        "operationId": "PUT /api/v1/adGroups",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adGroupId": {
+                    "description": "The ID of the ad group. Required only if updating existing ad group",
+                    "type": "integer"
+                  },
+                  "name": {
+                    "description": "The name of the ad group",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Status of ad group",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "adGroupId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "ID of the ad group being updated",
+                        "type": "integer"
+                      },
+                      "code": {
+                        "description": "Status of the ad group update.Expected values: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the update",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "To make changes in one or more existing ad groups. The existing AD group can be enabled, disabled or deleted.",
+        "tags": [
+          "Ad Groups"
+        ]
+      }
+    },
+    "/api/v1/adItems": {
+      "get": {
+        "operationId": "GET /api/v1/adItems",
+        "parameters": [
+          {
+            "description": "ID of the campaign where the ad group belongs",
+            "in": "query",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "ID of the ad group that is part of the campaign",
+                        "type": "integer"
+                      },
+                      "adItemId": {
+                        "description": "A product can be part of several Ad groups. adItemId is ID of the product that ties it to a specific ad group.",
+                        "type": "integer"
+                      },
+                      "bid": {
+                        "description": "Cost per click set for the item",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "campaignId": {
+                        "description": "ID of the campaign",
+                        "type": "integer"
+                      },
+                      "itemId": {
+                        "description": "ID of the products that are being listed by this GET operation",
+                        "type": "string"
+                      },
+                      "itemImageUrl": {
+                        "description": "URL for image of Item.",
+                        "type": "string"
+                      },
+                      "itemPageUrl": {
+                        "description": "URL for item page.",
+                        "type": "string"
+                      },
+                      "name": {
+                        "description": "Name of the ad item.",
+                        "type": "string"
+                      },
+                      "reviewReason": {
+                        "description": "Reason for rejection of Search Brand Amplifier ad group. More details can be found in overall review comments for the ad group if marked as “Other”.",
+                        "type": "string"
+                      },
+                      "reviewStatus": {
+                        "description": "Review outcome for the item. Expected values: pending, approved, rejected.",
+                        "type": "string"
+                      },
+                      "status": {
+                        "description": "Status of ad item Status values: enabled, disabled",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Used to retrieve the list of all the products added to the campaign catalog.",
+        "tags": [
+          "Ad Items"
+        ]
+      },
+      "post": {
+        "operationId": "POST /api/v1/adItems",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adGroupId": {
+                    "description": "ID of the ad group that is part of the campaign",
+                    "type": "integer"
+                  },
+                  "bid": {
+                    "description": "Maximum cost per clicks for the item in an auto bidding campaign.Note: Bids on keywords in keyword-bid campaign supersede the item bid you set for items in keyword-bid campaign",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "campaignId": {
+                    "description": "ID of the campaign where the ad group belongs",
+                    "type": "integer"
+                  },
+                  "itemId": {
+                    "description": "ID of the product that is being added to ad group",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Status of ad item",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "adGroupId",
+                  "itemId",
+                  "bid",
+                  "status"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adItemId": {
+                        "description": "ID of the ad item",
+                        "type": "integer"
+                      },
+                      "code": {
+                        "description": "The response code can have following values: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if response is failure",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Used to add new ad item to the ad group in a campaign.",
+        "tags": [
+          "Ad Items"
+        ]
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "operationId": "GET /api/v1/alerts",
+        "parameters": [
+          {
+            "description": "ID of the advertiser",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "ID of the ad group that is part of the campaign",
+                        "type": "integer"
+                      },
+                      "alertMessage": {
+                        "description": "Thread of alerts and recommendations",
+                        "type": "string"
+                      },
+                      "alertType": {
+                        "description": "Type of alert",
+                        "type": "string"
+                      },
+                      "campaignId": {
+                        "description": "ID of the campaign",
+                        "type": "integer"
+                      },
+                      "createdOn": {
+                        "description": "The date the alerts and recommendations were created on",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "You can retrieve following alerts and recommendations at advertiser/campaign level on the day of request: \"Ad Spend\", \"Remaining Budget\", \"Course of action\"",
+        "tags": [
+          "Alerts & Recommendations"
+        ]
+      }
+    },
+    "/api/v1/api_usage_analyze": {
+      "get": {
+        "operationId": "GET /api/v1/api_usage_analyze",
+        "parameters": [
+          {
+            "description": "Forbidden",
+            "in": "query",
+            "name": "403",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Too Many Requests",
+            "in": "query",
+            "name": "429",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Internal server error",
+            "in": "query",
+            "name": "500",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "count": {
+                        "description": "Total number of API operations made in last hour",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Get a count of how many total API operations were recorded in the last hour from the current timestamp, by user.",
+        "tags": [
+          "API Usage Analyzer"
+        ]
+      }
+    },
+    "/api/v1/campaigns": {
+      "get": {
+        "operationId": "GET /api/v1/campaigns",
+        "parameters": [
+          {
+            "description": "The ID of the campaign. It returns a specific campaign in response",
+            "in": "query",
+            "name": "campaignId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The ID of the advertiser. It returns all campaigns run by specific advertiser in response",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "A valid campaign name with which the desired campaign can be searched in the absence of campaign id",
+            "in": "query",
+            "name": "filter[name]",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Provide a date to fetch only those campaigns which were modified on or after that date Note: Modified here means: If there was any change to campaign set up",
+            "in": "query",
+            "name": "filter[lastModifiedDate]",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "advertiserId": {
+                        "description": "The ID of the advertiser for which the campaign is retrieved",
+                        "type": "integer"
+                      },
+                      "budgetType": {
+                        "description": "The type of budget allocation chosen for this campaign. Possible values of budgetType are: Daily, Total, Both",
+                        "type": "string"
+                      },
+                      "campaignId": {
+                        "description": "The ID of the campaign",
+                        "type": "integer"
+                      },
+                      "campaignType": {
+                        "description": "Type of campaign. Possible values for campaign type are: sponsoredProducts, sba Note: You receive campaign type “sba” in association with targeting type “manual” (for Search Brand Amplifier campaigns)",
+                        "type": "string"
+                      },
+                      "dailyBudget": {
+                        "description": "Daily budget of campaign",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "endDate": {
+                        "description": "The date when Campaign ends. It returns value 9999-12-30 if running indefinitely",
+                        "format": "date",
+                        "type": "string"
+                      },
+                      "name": {
+                        "description": "Name of the campaign",
+                        "type": "string"
+                      },
+                      "rollover": {
+                        "description": "The indicator to suggest if the unspent daily budget from the previous day should be carried forward to next day’s daily budget or not. The default and only value of rollover is “true” at present.",
+                        "type": "boolean"
+                      },
+                      "startDate": {
+                        "description": "The date to start campaign",
+                        "format": "date",
+                        "type": "string"
+                      },
+                      "status": {
+                        "description": "Specified status of campaign. Possible status values are: Proposal, Scheduled, Rescheduled, Live, Paused, Completed, Deleted Note: If you extend an already completed campaign, the campaign status will change to “rescheduled” and will eventually switch to “live”",
+                        "type": "object"
+                      },
+                      "targetingType": {
+                        "description": "The targeting type of the campaign is a set of options to create campaigns with different bidding types. Possible values to targeting type are: manual, auto Note: You receive targeting type as “manual” in case of keyword bidding campaigns (including Search Brand Amplifier)",
+                        "type": "string"
+                      },
+                      "totalBudget": {
+                        "description": "Total budget of campaign",
+                        "format": "double",
+                        "type": "number"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve a specific campaign or all the campaigns for a specific advertiser. Deleted campaigns will not be included.",
+        "tags": [
+          "Campaigns"
+        ]
+      },
+      "post": {
+        "operationId": "POST /api/v1/campaigns",
+        "parameters": [
+          {
+            "description": "The ID of the advertiser for whom the ad group(s) should be returned",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "advertiserId": {
+                    "description": "The ID of the advertiser. It returns all campaigns run by specific advertiser in response",
+                    "type": "integer"
+                  },
+                  "budgetType": {
+                    "description": "The type of budget allocation you want to choose for your campaign.",
+                    "type": "string"
+                  },
+                  "campaignType": {
+                    "description": "Type of campaign. Possible values for campaign type are: sponsoredProducts sba",
+                    "type": "string"
+                  },
+                  "dailyBudget": {
+                    "description": "Daily budget of campaign. Note: Daily budget cannot exceed your total budget amount There is no limit on the amount of daily budget that can carry forward to the next day",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "endDate": {
+                    "description": "The date when Campaign ends. You can choose to run the campaign indefinitely as well",
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "The name of the campaign",
+                    "type": "integer"
+                  },
+                  "rollover": {
+                    "description": "The indicator to suggest if the unspent daily budget from the previous day should be carried forward to next day’s daily budget",
+                    "type": "boolean"
+                  },
+                  "startDate": {
+                    "description": "The date to start campaign",
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Specified status of the campaign",
+                    "type": "string"
+                  },
+                  "targetingType": {
+                    "description": "The targeting type of the campaign is a set of options to create campaigns with different bidding types.",
+                    "type": "string"
+                  },
+                  "totalBudget": {
+                    "description": "Total budget of campaign",
+                    "format": "double",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "advertiserId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "campaignId": {
+                        "description": "ID of the campaign",
+                        "type": "integer"
+                      },
+                      "code": {
+                        "description": "Possible values of response code: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if value of response code is failure",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Create a new campaign in a draft state for a specific advertiser.",
+        "tags": [
+          "Campaigns"
+        ]
+      },
+      "put": {
+        "operationId": "PUT /api/v1/campaigns",
+        "parameters": [
+          {
+            "description": "The ID of the advertiser. It returns all campaigns run by specific advertiser in response",
+            "in": "query",
+            "name": "advertiserId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "campaignId": {
+                    "description": "The ID of the campaign. It returns a specific campaign in response",
+                    "type": "integer"
+                  },
+                  "name": {
+                    "description": "Name of the campaign",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Specified status of campaign",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "name",
+                  "status"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "campaignId": {
+                        "description": "Id of the campaign being updated",
+                        "type": "integer"
+                      },
+                      "code": {
+                        "description": "Shows status of the ad group update operation Values:success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the update",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Update an existing campaign",
+        "tags": [
+          "Campaigns"
+        ]
+      }
+    },
+    "/api/v1/campaigns/delete": {
+      "put": {
+        "operationId": "PUT /api/v1/campaigns/delete",
+        "parameters": [
+          {
+            "description": "The ID of the advertiser. It returns all campaigns run by specific advertiser in responsen",
+            "in": "query",
+            "name": "advertiserId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "campaignId": {
+                    "description": "The ID of the campaign",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "campaignId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "campaignId": {
+                        "description": "Id of the campaign",
+                        "type": "integer"
+                      },
+                      "code": {
+                        "description": "Possible values of response code: success, failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Response messages for success or failure",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Delete an existing campaign and its ad groups if campaign is scheduled but hasn’t gone live. You cannot delete a campaign that has gone live.",
+        "tags": [
+          "Campaigns"
+        ]
+      }
+    },
+    "/api/v1/itemSearch": {
+      "post": {
+        "operationId": "POST /api/v1/itemSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "advertiserId": {
+                    "description": "The ID of the advertiser whose catalog item is to be retrieved",
+                    "type": "integer"
+                  },
+                  "searchItemIds": {
+                    "description": "ID linked to the item that the advertiser is selling on the Walmart portal. You can give both the primary variant and variant item id in this field, depending on the requirement",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "searchText": {
+                    "description": "Text for item search. This is used to search the item against both the item name and the entire item description.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "advertiserId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "itemId": {
+                        "description": "ID of the primary variant item in search result",
+                        "type": "string"
+                      },
+                      "itemImageUrl": {
+                        "description": "Image URL of the primary variant item",
+                        "type": "string"
+                      },
+                      "itemName": {
+                        "description": "Name of the primary variant item in search result",
+                        "type": "string"
+                      },
+                      "itemPageUrl": {
+                        "description": "Primary variant Item page URL",
+                        "type": "string"
+                      },
+                      "suggestedBid": {
+                        "description": "Suggested bid (CPC) for the item",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "variantItems": {
+                        "description": "An array element to store info of variants associated to the specific primary variant item (whose id is returned in itemId).It stores variant info through following parameters: variantItemId variantItemName variantImageUrl",
+                        "format": "double",
+                        "type": "number"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "You can search for an item which is published on 'samsclub.com' by providing the search string text or item id. The list of items is pulled only from the seller's or supplier's catalog.",
+        "tags": [
+          "Catalog Item Search"
+        ]
+      }
+    },
+    "/api/v1/keywordAnalytics": {
+      "post": {
+        "operationId": "POST /api/v1/keywordAnalytics",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adGroupId": {
+                    "description": "ID of the ad group that is part of the campaign",
+                    "type": "integer"
+                  },
+                  "advertiserId": {
+                    "description": "ID of the advertiser",
+                    "type": "integer"
+                  },
+                  "itemIds": {
+                    "description": "List of item ids that are part of campaign. Note: Max limit on number of item ids is 10",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "advertiserId",
+                  "itemIds"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "itemId": {
+                        "description": "Id of the item belonging to the campaign",
+                        "type": "string"
+                      },
+                      "itemKeywordFrequency": {
+                        "description": "A number of times, a keyword led to an item display. This element is based on the item’s appearance in the first 5 search result pages or in the top 200 results for the respective keywords. Possible values are: High, Medium, Low",
+                        "type": "string"
+                      },
+                      "normalizedQuery": {
+                        "description": "A group of similar raw queries normalized into a single term by removing redundant information",
+                        "type": "string"
+                      },
+                      "rawQuery": {
+                        "description": "Randomly chosen search keywords for a single item Note: Maximum character length is 60 characters",
+                        "type": "string"
+                      },
+                      "trafficKeywordFrequency": {
+                        "description": "Based on number of times when a keyword was searched.Possible values are: High, Medium, Low",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Perform keyword research and analysis for advertisers.",
+        "tags": [
+          "Keywords"
+        ]
+      }
+    },
+    "/api/v1/keyword_suggestions": {
+      "get": {
+        "operationId": "GET /api/v1/keyword_suggestions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "adGroupId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "query": {
+                        "description": "Suggested keyword for the item(s) added in the ad group",
+                        "type": "string"
+                      },
+                      "score": {
+                        "description": "Suggested keyword relevancy indicator. Score is simply a rank given to each keyword from 1 to n where n is the no. of keywords returned. Higher score represents higher relevancy.",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "suggestedBid": {
+                        "description": "Automated bid-price recommendations for exact match type",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "suggestedbidBroad": {
+                        "description": "Automated bid-price recommendations for board match type",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "suggestedbidExact": {
+                        "description": "Automated bid-price recommendations for exrta match type",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "suggestedbidPhrase": {
+                        "description": "Automated bid-price recommendations for pharse match type",
+                        "format": "double",
+                        "type": "number"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Get a list of suggested keywords based on the item added in the ad group.",
+        "tags": [
+          "Keywords"
+        ]
+      }
+    },
+    "/api/v1/keywords": {
+      "get": {
+        "operationId": "GET /api/v1/keywords",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "ID of the ad group that is part of the campaign",
+                        "type": "integer"
+                      },
+                      "bid": {
+                        "description": "Maximum cost per click for the keyword in dollars",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "campaignId": {
+                        "description": "ID of the Campaign",
+                        "type": "integer"
+                      },
+                      "keywordId": {
+                        "description": "ID of the key word",
+                        "type": "integer"
+                      },
+                      "keywordText": {
+                        "description": "Text that defines the keyword",
+                        "type": "string"
+                      },
+                      "matchType": {
+                        "description": "Matching criteria for the keywords. Values can be: Exact, Pharse, Board",
+                        "type": "string"
+                      },
+                      "state": {
+                        "description": "State of the keyword. Values can be: Enabled, Paused, Archived",
+                        "type": "string"
+                      },
+                      "status": {
+                        "description": "Status of the keyword added in the campaign and the values can be: approved, pending, rejected.Note: By default it should be \"pending\" for each new or re-enabled keyword",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "List all the keywords that are part of a campaign.",
+        "tags": [
+          "Keywords"
+        ]
+      },
+      "post": {
+        "operationId": "POST /api/v1/keywords",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adGroupId": {
+                    "description": "ID of the group",
+                    "type": "integer"
+                  },
+                  "bid": {
+                    "description": "Maximum cost per click for the keyword",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "campaignId": {
+                    "description": "ID of the campaign",
+                    "type": "integer"
+                  },
+                  "keywordText": {
+                    "description": "Text that defines the keyword",
+                    "type": "string"
+                  },
+                  "matchType": {
+                    "description": "Matching criteria for the keywords",
+                    "type": "string"
+                  },
+                  "state": {
+                    "description": "State of the keyword",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "adGroupId",
+                  "matchType",
+                  "bid",
+                  "state",
+                  "keywordText"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "The response code can have following values: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if value of response code is failure",
+                        "type": "string"
+                      },
+                      "keywordId": {
+                        "description": "ID of the keyword",
+                        "type": "integer"
+                      },
+                      "keywordText": {
+                        "description": "Text that defines the keyword",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Add keywords to already existing keyword bid campaign. You can add your own keywords as well.",
+        "tags": [
+          "Keywords"
+        ]
+      },
+      "put": {
+        "operationId": "PUT /api/v1/keywords",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "bid": {
+                    "description": "Maximum cost per click for the keyword",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "keywordId": {
+                    "description": "ID of the keyword",
+                    "type": "integer"
+                  },
+                  "state": {
+                    "description": "State of the keyword",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "keywordId",
+                  "bid",
+                  "state"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "The response code can have following values: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if value of response code is failure",
+                        "type": "string"
+                      },
+                      "keywordId": {
+                        "description": "ID of the keyword",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Update current state and bid of existing keywords.",
+        "tags": [
+          "Keywords"
+        ]
+      }
+    },
+    "/api/v1/latestReportDate": {
+      "get": {
+        "operationId": "GET /api/v1/latestReportDate",
+        "parameters": [
+          {
+            "description": "Forbidden",
+            "in": "query",
+            "name": "403",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Too Many Requests",
+            "in": "query",
+            "name": "429",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Internal server error",
+            "in": "query",
+            "name": "500",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "latestReportDate": {
+                        "description": "Get the latest date for which reports are available. The format is yyyy-MM-dd",
+                        "format": "date",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve the latest date for which the performance reports have been processed and can be accessed.",
+        "tags": [
+          "Latest Report Date"
+        ]
+      }
+    },
+    "/api/v1/media": {
+      "get": {
+        "operationId": "GET /api/v1/media",
+        "parameters": [
+          {
+            "description": "The ID of the advertiser",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The unique Id of the media file generated from the notify media upload complete call Note: When an advertiser id and multiple media ids are provided, the service shall return the media details qualifying for the first media id.",
+            "in": "query",
+            "name": "mediaId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The value represents the status of the media file.Note: When an advertiser id and multiple status are provided, the service shall return the media details qualifying for the first status.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "details": {
+                        "description": "Details of the media",
+                        "type": "string"
+                      },
+                      "mediaId": {
+                        "description": "The unique Id of the media file generated from the notify media upload complete call",
+                        "type": "integer"
+                      },
+                      "name": {
+                        "description": "Name of the media",
+                        "type": "string"
+                      },
+                      "status": {
+                        "description": "Expected values: PENDING, AVAILABLE, FAILED",
+                        "type": "string"
+                      },
+                      "thumbnail": {
+                        "description": "URL for the image snapshot of video",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "List All the Media",
+        "tags": [
+          "Media"
+        ]
+      },
+      "put": {
+        "operationId": "PUT /api/v1/media",
+        "parameters": [
+          {
+            "description": "The ID of the advertiser",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The title of the video asset Note: The mediaName can have a maximum size of 45 characters, with no special characters allowed",
+            "in": "query",
+            "name": "mediaName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The unique Id of the media file",
+            "in": "query",
+            "name": "mediaId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "Status of the ad group update operation Values: success or Failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the update",
+                        "type": "string"
+                      },
+                      "mediaId": {
+                        "description": "The unique Id of the media file whose title is changed successfully",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Use this endpoint to Update the media file name",
+        "tags": [
+          "Media"
+        ]
+      }
+    },
+    "/api/v1/media/complete": {
+      "put": {
+        "operationId": "PUT /api/v1/media/complete",
+        "parameters": [
+          {
+            "description": "The ID of the ad group. Required only if updating an existing ad group.",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The title of the video is creative. The maximum file name size is 45 characters and no special characters are allowed.",
+            "in": "query",
+            "name": "mediaName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "ID that is generated in response to receiving a request for uploading a video asset.",
+            "in": "query",
+            "name": "mediaUploadRequestId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "Status of the ad group update operation Values: Success or Failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the failure in case of video file/caption file validation error",
+                        "type": "string"
+                      },
+                      "errors": {
+                        "description": "Error description in case of failure. It consists of the following with string datatype: message, type, code",
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "mediaId": {
+                        "description": "Details of the failure in case of video file/caption file validation error",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Complete Media Upload",
+        "tags": [
+          "Media"
+        ]
+      }
+    },
+    "/api/v1/media/upload": {
+      "post": {
+        "operationId": "POST /api/v1/media/upload",
+        "parameters": [
+          {
+            "description": "ID of the advertiser, uploading video asset",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The value of mediaType is “video”.",
+            "in": "query",
+            "name": "mediaType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "captionUrl": {
+                        "description": "The URL to upload the closed caption file. Note: The URL expires in 15 minutes. The upload location only supports PUT HTTP method to upload the caption file.",
+                        "type": "string"
+                      },
+                      "code": {
+                        "description": "Possible values of the response code: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if response code is failure",
+                        "type": "string"
+                      },
+                      "mediaUploadRequestId": {
+                        "description": "Id that is generated in response to receiving a request for uploading a video asset",
+                        "type": "integer"
+                      },
+                      "uploadUrl": {
+                        "description": "The URL to upload the media. Note: The URL expires in 15 minutes. The upload location only supports PUT HTTP method to upload the media content.",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "The upload media endpoint is used to create a location to upload a video asset and an optional closed caption file (recommended if the video has spoken words). This location is short-lived and expires in 15 minutes.",
+        "tags": [
+          "Media"
+        ]
+      }
+    },
+    "/api/v1/multipliers/placement": {
+      "get": {
+        "operationId": "GET /api/v1/multipliers/placement",
+        "parameters": [
+          {
+            "description": "Id of the campaign where the ad group belongs",
+            "in": "query",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "campaignId": {
+                        "description": "ID of the campaign",
+                        "type": "integer"
+                      },
+                      "multiplier": {
+                        "description": "% Value by which original bid is modified",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "placementType": {
+                        "description": "Type of placement. Values are: For auto campaigns: 1) Search Ingrid 2) Buy-Box For manual campaigns: Search Ingrid",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve the list of all the placement bid multipliers for a campaign.",
+        "tags": [
+          "Bid Multipliers"
+        ]
+      },
+      "post": {
+        "operationId": "POST /api/v1/multipliers/placement",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "campaignId": {
+                    "description": "Id of the campaign",
+                    "type": "integer"
+                  },
+                  "multiplier": {
+                    "description": "% Value by which original bid is modified",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "placementType": {
+                    "description": "Type of the placement",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "placementType",
+                  "multiplier"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "Possible values of response code: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if value of response code is failure",
+                        "type": "string"
+                      },
+                      "placementMultiplierId": {
+                        "description": "ID of the placement multiplier",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Create placement bid multipliers for a campaign.",
+        "tags": [
+          "Bid Multipliers"
+        ]
+      },
+      "put": {
+        "operationId": "PUT /api/v1/multipliers/placement",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "campaignId": {
+                    "description": "Id of the campaign",
+                    "type": "integer"
+                  },
+                  "multiplier": {
+                    "description": "% Value by which original bid is modified",
+                    "type": "integer"
+                  },
+                  "placementType": {
+                    "description": "Type of the placement",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "placementType",
+                  "multiplier"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "The response code can have following values: success, failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if value of response code is failure",
+                        "type": "string"
+                      },
+                      "placementMultiplierId": {
+                        "description": "ID of the placement multiplier",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Update placement bid multipliers for a campaign.",
+        "tags": [
+          "Bid Multipliers"
+        ]
+      }
+    },
+    "/api/v1/multipliers/platform": {
+      "get": {
+        "operationId": "GET /api/v1/multipliers/platform",
+        "parameters": [
+          {
+            "description": "Id of the campaign where the ad group belongs.",
+            "in": "query",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "campaignId": {
+                        "description": "ID of the campaign",
+                        "type": "integer"
+                      },
+                      "multiplier": {
+                        "description": "% Value by which original bid is modified",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "placementType": {
+                        "description": "Type of the platform. Values are: Desktop, Mobile, App",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve the list of all the platform bid multipliers for a campaign.",
+        "tags": [
+          "Bid Multipliers"
+        ]
+      },
+      "post": {
+        "operationId": "POST /api/v1/multipliers/platform",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "campaignId": {
+                    "description": "Id of the campaign",
+                    "type": "integer"
+                  },
+                  "multiplier": {
+                    "description": "% Value by which original bid is modified",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "platformType": {
+                    "description": "Type of the platform",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "platformType",
+                  "multiplier"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "The response code can have following values: success, failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if value of response code is failure",
+                        "type": "string"
+                      },
+                      "placementMultiplierId": {
+                        "description": "ID of the placement multiplier",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Create platform bid multipliers for a campaign.",
+        "tags": [
+          "Bid Multipliers"
+        ]
+      },
+      "put": {
+        "operationId": "PUT /api/v1/multipliers/platform",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "campaignId": {
+                    "description": "Id of the campaign",
+                    "type": "integer"
+                  },
+                  "multiplier": {
+                    "description": "% Value by which original bid is modified",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "placementType": {
+                    "description": "Type of the placement",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "placementType",
+                  "multiplier"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "The response code can have following values: success, failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if value of response code is failure",
+                        "type": "string"
+                      },
+                      "placementMultiplierId": {
+                        "description": "ID of the placement multiplier",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Update platform bid multipliers for a campaign.",
+        "tags": [
+          "Bid Multipliers"
+        ]
+      }
+    },
+    "/api/v1/negative_keywords": {
+      "get": {
+        "operationId": "GET /api/v1/negative_keywords",
+        "parameters": [
+          {
+            "description": "ID of the advertiser",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "ID of the campaign",
+            "in": "query",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "ID of the ad group",
+                        "type": "integer"
+                      },
+                      "campaignId": {
+                        "description": "ID of the campaign",
+                        "type": "integer"
+                      },
+                      "keywordId": {
+                        "description": "ID of the keyword",
+                        "type": "integer"
+                      },
+                      "keywordText": {
+                        "description": "Text that defines the keyword",
+                        "type": "string"
+                      },
+                      "negativeMatchType": {
+                        "description": "Matching criterion for the negative keywords. negativeExact is the only match type for negative keywords.",
+                        "type": "string"
+                      },
+                      "state": {
+                        "description": "State of the keyword",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve the list of all the negative keywords in the campaign.",
+        "tags": [
+          "Negative Keywords"
+        ]
+      },
+      "post": {
+        "operationId": "POST /api/v1/negative_keywords",
+        "parameters": [
+          {
+            "description": "ID of the campaign",
+            "in": "query",
+            "name": "campaignId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adGroupId": {
+                    "description": "ID of the ad group",
+                    "type": "integer"
+                  },
+                  "campaignId": {
+                    "description": "ID of the campaign",
+                    "type": "integer"
+                  },
+                  "keywordText": {
+                    "description": "Ad keyword(s) that when matched to search term excludes the ad from sponsored display",
+                    "type": "string"
+                  },
+                  "negativeMatchType": {
+                    "description": "Matching criterion for negative keywords",
+                    "type": "string"
+                  },
+                  "state": {
+                    "description": "Indicates if negative keyword matching is enabled",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "adGroupId",
+                  "negativeMatchType",
+                  "state",
+                  "keywordText"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "The response code can have following values: success, failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if value of response code is failure",
+                        "type": "string"
+                      },
+                      "keywordId": {
+                        "description": "Five-digit ID of the keyword",
+                        "type": "integer"
+                      },
+                      "keywordText": {
+                        "description": "Text that defines the keyword",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Add negative keywords to an existing campaign.",
+        "tags": [
+          "Negative Keywords"
+        ]
+      },
+      "put": {
+        "operationId": "PUT /api/v1/negative_keywords",
+        "parameters": [
+          {
+            "description": "ID of the ad advertiser",
+            "in": "query",
+            "name": "advertiserId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "ID of the ad campaign",
+            "in": "query",
+            "name": "campaignId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "keywordId": {
+                    "description": "Five-digit ID of the campaign",
+                    "type": "integer"
+                  },
+                  "state": {
+                    "description": "ID of the ad group",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "keywordId",
+                  "state"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "The response code can have following values: success, failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if value of response code is failure",
+                        "type": "string"
+                      },
+                      "keywordId": {
+                        "description": "Five-digit ID of the keyword",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Update the state of existing keywords.",
+        "tags": [
+          "Negative Keywords"
+        ]
+      }
+    },
+    "/api/v1/placements": {
+      "get": {
+        "operationId": "GET /api/v1/placements",
+        "parameters": [
+          {
+            "description": "The ID of the campaign for which the ad group(s) should be returned",
+            "in": "query",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The ID of the advertiser. It returns all campaigns run by specific advertiser in response",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "placement": {
+                        "description": "where the campaign is to have a placement",
+                        "type": "string"
+                      },
+                      "status": {
+                        "description": "Status of the campaign placement",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Fetch and list all campaign placements",
+        "tags": [
+          "Placements"
+        ]
+      },
+      "post": {
+        "operationId": "POST /api/v1/placements",
+        "parameters": [
+          {
+            "description": "The ID of the campaign for which the placement will be added to",
+            "in": "query",
+            "name": "campaignId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The ID of the advertiser. It returns all campaigns run by specific advertiser in response",
+            "in": "query",
+            "name": "advertiserId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "campaignId": {
+                    "description": "The ID of the campaign for which the placement will be added to",
+                    "type": "integer"
+                  },
+                  "placements": {
+                    "description": "Array of Objects, each of which contains placement and status of the placement. The type of both placement and status properties is String.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "placements"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "campaignId": {
+                        "description": "A numeric identifier of campaign that has had placement updated",
+                        "type": "integer"
+                      },
+                      "code": {
+                        "description": "Returns if operation is a failure or success",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Any detailed comments in the response. If the operation was a failure, returns reason for failure. If success returns blank value",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Add campaign placement to keyword bidded campaign.",
+        "tags": [
+          "Placements"
+        ]
+      },
+      "put": {
+        "operationId": "PUT /api/v1/placements",
+        "parameters": [
+          {
+            "description": "The ID of the campaign for which the placement will be added to",
+            "in": "query",
+            "name": "campaignId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The ID of the advertiser. It returns all campaigns run by specific advertiser in response",
+            "in": "query",
+            "name": "advertiserId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "campaignId": {
+                    "description": "The ID of the campaign for which the placement will be added to",
+                    "type": "integer"
+                  },
+                  "placements": {
+                    "description": "Array of Objects, each of which contains placement and status of the placement. The type of both placement and status properties is String.",
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "placements"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "campaignId": {
+                        "description": "A numeric identifier of campaign that has had placement updated",
+                        "type": "integer"
+                      },
+                      "code": {
+                        "description": "Returns if operation is a failure or success",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Any detailed comments in the response. If operation was a failure returns reason for failure. If success returns blank value",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Update the campaign placement for a keyword bidded campaign.",
+        "tags": [
+          "Placements"
+        ]
+      }
+    },
+    "/api/v1/review": {
+      "get": {
+        "operationId": "GET /api/v1/review",
+        "parameters": [
+          {
+            "description": "The ID of the advertiser for whom the review(s) should be returned",
+            "in": "query",
+            "name": "advertiserId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "ID of the ad group for whom the review(s) should be returned. Can fetch only reviews for a specific adgroup within the advertiser by specifying this parameter",
+            "in": "query",
+            "name": "adGroupId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "ID of the ad group",
+                        "type": "integer"
+                      },
+                      "campaignId": {
+                        "description": "ID of the campaign",
+                        "type": "integer"
+                      },
+                      "reviewComments": {
+                        "description": "Feedback comments from AdOps on invalid content. Contains the \"commentType\"(attribute that comment is for) and \"comment\"(reason that attribute was rejected)",
+                        "type": "string"
+                      },
+                      "reviewId": {
+                        "description": "ID of the review",
+                        "type": "integer"
+                      },
+                      "reviewStatus": {
+                        "description": "State of the review; \"pending\", \"in progress\", or \"complete\"",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Fetch reviews that have been submitted for an advertiser",
+        "tags": [
+          "Review"
+        ]
+      }
+    },
+    "/api/v1/sba_profile": {
+      "get": {
+        "operationId": "GET /api/v1/sba_profile",
+        "parameters": [
+          {
+            "description": "The ID of the campaign. It returns a specific campaign in response",
+            "in": "query",
+            "name": "campaignId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "ID of the ad group",
+            "in": "query",
+            "name": "adGroupId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "ID of the ad group that is part of the campaign",
+                        "type": "integer"
+                      },
+                      "campaignId": {
+                        "description": "The ID of the campaign",
+                        "type": "integer"
+                      },
+                      "clickUrl": {
+                        "description": "Url that customer is directed to when they click on the ad",
+                        "type": "string"
+                      },
+                      "headlineText": {
+                        "description": "Headline to be displayed on Banner ad",
+                        "type": "string"
+                      },
+                      "logoUrl": {
+                        "description": "Url for for the brand image that is displayed on the ad",
+                        "type": "string"
+                      },
+                      "reviewReason": {
+                        "description": "Reason for rejection of SBA profile. If approved, this field is returned as null value",
+                        "type": "string"
+                      },
+                      "reviewStatus": {
+                        "description": "Status of AdOps review of SBA profile. Expected values: pending , complete",
+                        "type": "string"
+                      },
+                      "sbaProfileId": {
+                        "description": "5 digit ID for the SBA profile",
+                        "type": "integer"
+                      },
+                      "searchAmpName": {
+                        "description": "Brand Name",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve the SBA profile for a given Campaign and Ad Group.",
+        "tags": [
+          "SBA Profile V1"
+        ]
+      },
+      "post": {
+        "operationId": "POST /api/v1/sba_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adgroupId": {
+                    "description": "ID of the ad group that is part of the campaign",
+                    "type": "integer"
+                  },
+                  "campaignId": {
+                    "description": "The ID of the campaign. It returns a specific campaign in response",
+                    "type": "integer"
+                  },
+                  "clickUrl": {
+                    "description": "The click url that the customer will be directed when they click on the advertisement",
+                    "type": "string"
+                  },
+                  "searchAmpName": {
+                    "description": "The Brand name that will be displayed to the customer",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "adgroupId",
+                  "searchAmpName",
+                  "clickUrl"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "Possible values of response code: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if response code is failure",
+                        "type": "string"
+                      },
+                      "sbaProfileId": {
+                        "description": "ID of the SBA profile",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Create an SBA profile for an Adgroup or multiple SBA profiles for AdGroups all at once.",
+        "tags": [
+          "SBA Profile V1"
+        ]
+      },
+      "put": {
+        "operationId": "PUT /api/v1/sba_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adgroupId": {
+                    "description": "ID of the ad group that is part of the campaign",
+                    "type": "integer"
+                  },
+                  "campaignId": {
+                    "description": "The ID of the campaign. It returns a specific campaign in response",
+                    "type": "integer"
+                  },
+                  "clickUrl": {
+                    "description": "The click url that the customer will be directed when they click on the advertisement",
+                    "type": "string"
+                  },
+                  "headlineText": {
+                    "description": "The headline of the advertisement that will be displayed to the customer",
+                    "type": "string"
+                  },
+                  "searchAmpName": {
+                    "description": "The Brand name that will be displayed to the customer",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "adgroupId",
+                  "searchAmpName",
+                  "headlineText",
+                  "clickUrl"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "Possible values of response code: success, failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if response code is failure",
+                        "type": "string"
+                      },
+                      "sbaProfileId": {
+                        "description": "ID of the Search Brand Amplifier profile",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "You can update Search Brand Amplifier profile for a live Search Brand Amplifier campaign as well. To update the enabled Search Brand Amplifier profile in a live campaign, you will have to pause the campaign, update the profile, and submit it for review.",
+        "tags": [
+          "SBA Profile V1"
+        ]
+      }
+    },
+    "/api/v1/snapshot": {
+      "get": {
+        "operationId": "GET /api/v1/snapshot",
+        "parameters": [
+          {
+            "description": "The ID of the advertiser",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "ID of the snapshot",
+            "in": "query",
+            "name": "snapshotId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "The response code can have following values: success, failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "URL of the snapshot file once jobStatus reaches to state “done”",
+                        "type": "string"
+                      },
+                      "jobStatus": {
+                        "description": "It is an indicator to confirm status of snapshot generation. The possible values of jobStatus are: pending, processing, done, failed, expired",
+                        "type": "string"
+                      },
+                      "snapshotId": {
+                        "description": "Id of the snapshot to be retrieved",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve report snapshots by providing snapshot ID and advertiser id for an advertiser.",
+        "tags": [
+          "Snapshot Reports v1"
+        ]
+      }
+    },
+    "/api/v1/snapshot/report": {
+      "post": {
+        "operationId": "POST /api/v1/snapshot/report",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "advertiserId": {
+                    "description": "The ID of the advertiser",
+                    "type": "integer"
+                  },
+                  "attributionWindow": {
+                    "description": "Window for click attribution. *Window for view attribution is 1 day by default.",
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "description": "The last day to be considered in the performance report snapshot. It cannot be the current date.Note: If report data is not available for the requested end date, the request will fail, and the response will contain endDate until which the performance report is available",
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "extraFields": {
+                    "description": "extraFields holds following parameters: Date, splitAttribution",
+                    "type": "string"
+                  },
+                  "format": {
+                    "description": "Choose the format type for your snapshot",
+                    "type": "string"
+                  },
+                  "reportType": {
+                    "description": "Type of report to be retrieved",
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "description": "The first day to be considered in the performance report snapshot. It cannot be the current date",
+                    "format": "date",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "advertiserId",
+                  "startDate",
+                  "endDate",
+                  "attributionWindow",
+                  "reportType",
+                  "extraFields",
+                  "format"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Request a snapshot file for all performance reporting data available (until the date before the current date) for a given advertiser.",
+        "tags": [
+          "Snapshot Reports v1"
+        ]
+      }
+    },
+    "/api/v1/stats": {
+      "get": {
+        "operationId": "GET /api/v1/stats",
+        "parameters": [
+          {
+            "description": "The ID of the advertiser for whom the ad group(s) should be returned",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The ID of the campaign for which the performance metrics for today need to be retrieved",
+            "in": "query",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "Id of the ad group Note: Please ignore this parameter because we now provide stats at campaign level only, and eventually adGroupId will be removed from the response. For now, we will return ‘-1’ for this field.",
+                        "type": "integer"
+                      },
+                      "asOf": {
+                        "description": "Date and time for which the statistics (ad spend, impressions, clicks, daily remaining budget) is requested. Note: The time zone is in PST and time stamp format is 24-hour format",
+                        "type": "string"
+                      },
+                      "campaignId": {
+                        "description": "Id of the advertising campaign whose ad spend is being retrieved",
+                        "type": "integer"
+                      },
+                      "dailyOutOfBudgetDatetime": {
+                        "description": "An indicator of whether a campaign has yet run out of its assigned daily budget or not. It returns following values: Actual Date and Time: It returns the date and timestamp of when the campaign exhausted its daily budget and stopped serving ads Empty: It returns a blank if the daily budget is not yet exhausted Note: Since it measures the spending of the daily budget, it only provides a date and time stamp for the current day. Also, since it refreshes every day, it will return a blank the subsequent day if the daily budget is not exhaustedThe time zone is in PST and time stamp format is 24-hour format",
+                        "type": "string"
+                      },
+                      "dailyRemainingBudget": {
+                        "description": "The amount of daily budget left after today’s ad spend is consumed",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "todayAdSpend": {
+                        "description": "The amount of budget spent for current date",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "todayClicks": {
+                        "description": "Total number of clicks counted for today",
+                        "type": "integer"
+                      },
+                      "todayImpressions": {
+                        "description": "Total number of impressions counted for today",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "You can retrieve following metrics at advertiser/campaign level in near real-time for the time elapsed on the day of request: \"Ad Spend\", \"Clicks\", \"Impressions\", \"Daily Remaining Budget\", \"Daily Out of budget Date Time\"",
+        "tags": [
+          "Statistics"
+        ]
+      }
+    },
+    "/api/v2/sba_profile": {
+      "get": {
+        "operationId": "GET /api/v2/sba_profile",
+        "parameters": [
+          {
+            "description": "The ID of the campaign. It returns a specific campaign in response",
+            "in": "query",
+            "name": "campaignId",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "ID of the ad group",
+            "in": "query",
+            "name": "adGroupId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adGroupId": {
+                        "description": "ID of the ad group that is part of the campaign",
+                        "type": "integer"
+                      },
+                      "campaignId": {
+                        "description": "The ID of the campaign",
+                        "type": "integer"
+                      },
+                      "clickUrl": {
+                        "description": "Url that customer is directed to when they click on the ad",
+                        "type": "string"
+                      },
+                      "headlineText": {
+                        "description": "Headline to be displayed on Banner ad",
+                        "type": "string"
+                      },
+                      "logoUrl": {
+                        "description": "Url for for the brand image that is displayed on the ad",
+                        "type": "string"
+                      },
+                      "reviewReason": {
+                        "description": "Reason for rejection of SBA profile.If approved , this field is returned as null value",
+                        "type": "string"
+                      },
+                      "reviewStatus": {
+                        "description": "Status of AdOps review of SBA profile. Expected values: pending , complete",
+                        "type": "string"
+                      },
+                      "sbaProfileId": {
+                        "description": "5 digit ID for the SBA profile",
+                        "type": "integer"
+                      },
+                      "searchAmpName": {
+                        "description": "Brand Name",
+                        "type": "string"
+                      },
+                      "status": {
+                        "description": "Status of the SBA profile. Expected values : enabled, disabled",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Retrieve all SBA profiles for a given Campaign and Ad Group.",
+        "tags": [
+          "SBA Profile V2"
+        ]
+      },
+      "post": {
+        "operationId": "POST /api/v2/sba_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adgroupId": {
+                    "description": "ID of the ad group that is part of the campaign",
+                    "type": "integer"
+                  },
+                  "campaignId": {
+                    "description": "The ID of the campaign. It returns a specific campaign in response",
+                    "type": "integer"
+                  },
+                  "clickUrl": {
+                    "description": "The click url that the customer will be directed when they click on the advertisement",
+                    "type": "string"
+                  },
+                  "searchAmpName": {
+                    "description": "The Brand name that will be displayed to the customer",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "adgroupId",
+                  "searchAmpName",
+                  "clickUrl"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "Possible values of response code: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if response code is failure",
+                        "type": "string"
+                      },
+                      "sbaProfileId": {
+                        "description": "ID of the SBA profile",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Create an SBA profile for an Adgroup or multiple SBA profiles for AdGroups all at once.",
+        "tags": [
+          "SBA Profile V2"
+        ]
+      },
+      "put": {
+        "operationId": "PUT /api/v2/sba_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adgroupId": {
+                    "description": "ID of the ad group that is part of the campaign",
+                    "type": "integer"
+                  },
+                  "campaignId": {
+                    "description": "The ID of the campaign. It returns a specific campaign in response",
+                    "type": "integer"
+                  },
+                  "clickUrl": {
+                    "description": "The click url that the customer will be directed when they click on the advertisement",
+                    "type": "string"
+                  },
+                  "headlineText": {
+                    "description": "The headline of the advertisement that will be displayed to the customer",
+                    "type": "string"
+                  },
+                  "sbaProfileId": {
+                    "description": "The ID of the SBA profile to be edited",
+                    "type": "integer"
+                  },
+                  "searchAmpName": {
+                    "description": "The Brand name that will be displayed to the customer",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "The status of the SBA profile",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "adgroupId",
+                  "sbaProfileId",
+                  "searchAmpName",
+                  "headlineText",
+                  "clickUrl",
+                  "status"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "Possible values of response code: success, failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if response code is failure",
+                        "type": "string"
+                      },
+                      "sbaProfileId": {
+                        "description": "ID of the Search Brand Amplifier profile",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "You can update Search Brand Amplifier profile for a live Search Brand Amplifier campaign as well. To update the enabled Search Brand Amplifier profile in a live campaign, you will have to pause the campaign, update the profile, and submit it for review.",
+        "tags": [
+          "SBA Profile V2"
+        ]
+      }
+    },
+    "/api/v2/sba_profile_image_upload": {
+      "post": {
+        "operationId": "POST /api/v2/sba_profile_image_upload",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "description": "Image to be uploaded(File must be less than 1MB)",
+                    "type": "string"
+                  },
+                  "sbaBaseProfileRequest": {
+                    "description": "The campaign ID, adgroupId and sbaProfile ID of the SBA profile that the image will be uploaded to",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file",
+                  "sbaBaseProfileRequest"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "Possible values of response code: success, failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if response code is failure",
+                        "type": "string"
+                      },
+                      "sbaProfileId": {
+                        "description": "ID of the Search Brand Amplifier profile",
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Upload a logo image to an SBA profile by SBA profile ID.",
+        "tags": [
+          "SBA Profile V2"
+        ]
+      }
+    },
+    "/api/v2/snapshot": {
+      "get": {
+        "operationId": "GET /api/v2/snapshot",
+        "parameters": [
+          {
+            "description": "The ID of the advertiser",
+            "in": "query",
+            "name": "advertiserId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "ID of the snapshot",
+            "in": "query",
+            "name": "snapshotId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "code": {
+                        "description": "The response code can have following values: success, failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if value of response code is failure",
+                        "type": "string"
+                      },
+                      "jobStatus": {
+                        "description": "It is an indicator to confirm status of snapshot generation. The possible values of jobStatus are: pending, processing, done, failed, expired",
+                        "type": "string"
+                      },
+                      "snapshotId": {
+                        "description": "ID of the snapshot",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "You can retrieve report snapshots by providing snapshot id and advertiser id for an advertiser",
+        "tags": [
+          "Snapshot Reports v2"
+        ]
+      }
+    },
+    "/api/v2/snapshot/report": {
+      "post": {
+        "operationId": "POST /api/v2/snapshot/report",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "advertiserId": {
+                    "description": "The ID of the advertiser",
+                    "type": "integer"
+                  },
+                  "endDate": {
+                    "description": "The last day to be considered in the performance report snapshot. It cannot be the current date. Note: To fetch reports, please use either reportDate or Combination of startDate and endDate. Using both together will result in an error. However, one of these must be defined",
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "reportDate": {
+                    "description": "The snapshot date for the report",
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "reportMetrics": {
+                    "description": "Choose the format type for your snapshot",
+                    "type": "string"
+                  },
+                  "reportType": {
+                    "description": "The type of the performance report for which the snapshot should be generated.",
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "description": "The first day to be considered in the performance report snapshot. It cannot be the current date.",
+                    "format": "date",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "advertiserId",
+                  "reportType",
+                  "reportMetrics",
+                  "reportDate",
+                  "startDate",
+                  "endDate"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "You can request a snapshot file for all performance reporting data available (until the date before current date) for a given advertiser using this method.",
+        "tags": [
+          "Snapshot Reports v2"
+        ]
+      }
+    },
+    "api/v1/adItems": {
+      "put": {
+        "operationId": "PUT api/v1/adItems",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adGroupId": {
+                    "description": "ID of the ad group that is part of the campaign",
+                    "type": "integer"
+                  },
+                  "bid": {
+                    "description": "Maximum cost per click for the item in an auto bidding campaign.Note: Bids on keywords in keyword-bid campaign supersede the item bid you set for items in keyword-bid campaign",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "campaignId": {
+                    "description": "ID of the campaign where the ad group belongs",
+                    "type": "integer"
+                  },
+                  "itemId": {
+                    "description": "ID of the product that is being added to ad group",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Status of ad item",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "adGroupId",
+                  "itemId",
+                  "bid",
+                  "status"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adItemId": {
+                        "description": "ID of the ad item",
+                        "type": "integer"
+                      },
+                      "code": {
+                        "description": "The response code can have following values: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if response is failure",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Update an existing ad item in an ad group using PUT operation.",
+        "tags": [
+          "Ad Items"
+        ]
+      }
+    },
+    "api/v1/snapshot/entity": {
+      "post": {
+        "operationId": "POST api/v1/snapshot/entity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "advertiserId": {
+                    "description": "The ID of the advertiser",
+                    "type": "integer"
+                  },
+                  "entityStatus": {
+                    "description": "The status of the entity Note: The default status is “enabled”. Disabled entities won’t be part of the snapshot unless you request “disabled” and/or “all”",
+                    "type": "string"
+                  },
+                  "entityTypes": {
+                    "description": "The type of entity for which the snapshot should be generated.",
+                    "type": "string"
+                  },
+                  "format": {
+                    "description": "Choose the format type for snapshot",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "advertiserId",
+                  "entityStatus",
+                  "entityTypes"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Create file-based snapshot for all the campaign entities for an advertiser.",
+        "tags": [
+          "Entity Snapshot"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://developer.samsclub.com/API"
+    }
+  ],
+  "tags": [
+    {
+      "name": "API Usage Analyzer"
+    },
+    {
+      "name": "Ad Group Media"
+    },
+    {
+      "name": "Ad Groups"
+    },
+    {
+      "name": "Ad Items"
+    },
+    {
+      "name": "Alerts & Recommendations"
+    },
+    {
+      "name": "Bid Multipliers"
+    },
+    {
+      "name": "Campaigns"
+    },
+    {
+      "name": "Catalog Item Search"
+    },
+    {
+      "name": "Entity Snapshot"
+    },
+    {
+      "name": "Keywords"
+    },
+    {
+      "name": "Latest Report Date"
+    },
+    {
+      "name": "Media"
+    },
+    {
+      "name": "Negative Keywords"
+    },
+    {
+      "name": "Placements"
+    },
+    {
+      "name": "Review"
+    },
+    {
+      "name": "SBA Profile V1"
+    },
+    {
+      "name": "SBA Profile V2"
+    },
+    {
+      "name": "Snapshot Reports v1"
+    },
+    {
+      "name": "Snapshot Reports v2"
+    },
+    {
+      "name": "Statistics"
+    }
+  ]
+}

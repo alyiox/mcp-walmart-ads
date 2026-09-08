@@ -6,107 +6,292 @@ from pathlib import Path
 import httpx
 import pytest
 
-from mcp_walmart_ads import discovery, specs
-from mcp_walmart_ads.specs import SpecError
+from mcp_walmart_ads import specs
+from mcp_walmart_ads.specs import (
+    API_IDS,
+    MAX_EXAMPLE_BYTES,
+    SPECS,
+    RegistrySource,
+    SpecError,
+    SpecMeta,
+    UrlSource,
+    prune_spec,
+)
 
-# Path counts lock the bundled specs (see OPENAPI extraction).
-_EXPECTED_PATHS = {
-    "search/sponsored-products": 43,
-    "display/display-rest-api": 78,
-    "display/ad-id-token-generation": 5,
-    "display/conversion-rest-api": 3,
-}
-
-
-def test_manifest_matches_bundled_files() -> None:
-    bundled = {
-        str(p.relative_to(specs.BUNDLE_DIR)).replace("\\", "/").removesuffix(".openapi.json")
-        for p in specs.BUNDLE_DIR.rglob("*.openapi.json")
-    }
-    manifest = {m.spec_id for m in specs.SPECS}
-    assert manifest == bundled
+# ── table integrity ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("spec_id,count", _EXPECTED_PATHS.items())
-def test_load_bundled_spec(spec_id: str, count: int) -> None:
-    spec = specs.load_spec(spec_id)
-    assert spec["openapi"].startswith("3.")
-    assert len(spec["paths"]) == count
+def test_every_declared_spec_has_a_bundled_file():
+    missing = [m.spec_id for m in SPECS if not specs.bundled_path(m).is_file()]
+    assert missing == []
 
 
-def test_load_unknown_spec_raises() -> None:
-    with pytest.raises(SpecError):
-        specs.load_spec("search/does-not-exist")
+def test_no_bundled_file_is_undeclared():
+    declared = {specs.bundled_path(m).resolve() for m in SPECS}
+    on_disk = set(specs.BUNDLE_DIR.rglob("*.openapi.json"))
+    assert on_disk - declared == set()
 
 
-def test_cache_overrides_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
-    meta = specs.meta_for("search/sponsored-products")
-    sentinel = {"openapi": "3.0.1", "paths": {"/sentinel": {}}}
-    specs._write_cache(specs.cache_path(meta), sentinel)
-    assert specs.load_spec("search/sponsored-products") == sentinel
+def test_spec_ids_are_unique_and_platform_qualified():
+    ids = [m.spec_id for m in SPECS]
+    assert len(ids) == len(set(ids))
+    assert all(m.spec_id.count(":") == 1 for m in SPECS)
+    assert all(m.spec_id.startswith(m.platform + ":") for m in SPECS)
 
 
-@pytest.mark.asyncio
-async def test_refresh_writes_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
-    fake = {"openapi": "3.0.1", "info": {"version": "9.9"}, "paths": {"/x": {}}}
-    monkeypatch.setattr(specs, "fetch_spec", lambda uuid, **kw: fake)
-
-    rows = await specs.refresh("search/sponsored-products")
-    assert len(rows) == 1
-    assert rows[0]["status"] == "written"
-    assert rows[0]["version"] == "9.9"
-    written = json.loads((tmp_path / "search" / "sponsored-products.openapi.json").read_text())
-    assert written == fake
+def test_api_surface_excludes_the_auxiliary_connect_specs():
+    aux = {m.spec_id for m in SPECS if not m.in_surface}
+    assert aux == {"connect:ad-id-token-generation", "connect:conversion-rest-api"}
+    assert aux.isdisjoint(API_IDS)
 
 
-@pytest.mark.asyncio
-async def test_refresh_reports_per_spec_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
-
-    def boom(uuid: str, **kw: object) -> dict:
-        raise httpx.ConnectError("offline")
-
-    monkeypatch.setattr(specs, "fetch_spec", boom)
-    rows = await specs.refresh()
-    assert len(rows) == len(specs.SPECS)
-    assert all(r["status"] == "error" for r in rows)
+def test_rel_path_derives_from_the_spec_id():
+    meta = specs.meta_for("marketplace:order-management")
+    assert meta.rel_path == "marketplace/order-management.openapi.json"
 
 
-# ── discovery ────────────────────────────────────────────────────────────────
+def test_unknown_api_names_the_known_ones():
+    with pytest.raises(SpecError) as excinfo:
+        specs.meta_for("marketplace:no-such-domain")
+    assert "connect:search" in str(excinfo.value)
 
 
-def test_list_endpoints_search() -> None:
-    result = discovery.list_endpoints("search")
-    assert len(result) == 69
-    assert all({"operation_id", "method", "path"} <= r.keys() for r in result)
+# ── sources ───────────────────────────────────────────────────────────────────
 
 
-def test_list_endpoints_filters() -> None:
-    by_method = discovery.list_endpoints("display", method="get")
-    assert by_method and all(r["method"] == "GET" for r in by_method)
-    by_query = discovery.list_endpoints("search", query="adgroup")
-    assert by_query and all(
-        "adgroup" in r["operation_id"].lower() or "adgroup" in r["path"].lower() for r in by_query
+def test_registry_source_builds_its_registry_url():
+    source = RegistrySource("abc123")
+    assert source.url == "https://dash.readme.com/api/v1/api-registry/abc123"
+
+
+def test_samsclub_is_the_only_url_sourced_spec():
+    url_sourced = [m.spec_id for m in SPECS if isinstance(m.source, UrlSource)]
+    assert url_sourced == ["samsclub:sponsored"]
+
+
+def test_url_source_defaults_to_unauthenticated():
+    meta = specs.meta_for("samsclub:sponsored")
+    assert isinstance(meta.source, UrlSource)
+    assert meta.source.auth is False
+
+
+def test_auth_headers_are_attached_only_for_an_authenticated_url_source():
+    seen: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+            seen[url] = headers
+            return httpx.Response(200, json={"openapi": "3.0.0"}, request=httpx.Request("GET", url))
+
+    original = httpx.Client
+    httpx.Client = FakeClient  # type: ignore[misc, assignment]
+    try:
+        specs.fetch_spec(UrlSource("https://example.test/a"), headers={"X-Sig": "1"})
+        specs.fetch_spec(UrlSource("https://example.test/b", auth=True), headers={"X-Sig": "1"})
+        specs.fetch_spec(RegistrySource("uuid-1"), headers={"X-Sig": "1"})
+    finally:
+        httpx.Client = original  # type: ignore[misc]
+
+    assert seen["https://example.test/a"] is None
+    assert seen["https://example.test/b"] == {"X-Sig": "1"}
+    assert seen["https://dash.readme.com/api/v1/api-registry/uuid-1"] is None
+
+
+# ── environments and base URLs ────────────────────────────────────────────────
+
+
+def test_marketplace_specs_inherit_the_platform_environments():
+    assert specs.meta_for("marketplace:order-management").environments_for() == (
+        "production",
+        "sandbox",
     )
 
 
-def test_describe_endpoint_resolves_refs() -> None:
-    ops = discovery.list_endpoints("search")
-    op_id = next(r["operation_id"] for r in ops if r["method"] == "POST")
-    desc = discovery.describe_endpoint("search", op_id)
-    assert desc["operation_id"] == op_id
-    assert "schemas" in desc["components"]
+def test_ads_specs_defer_their_environments_to_the_config():
+    assert specs.meta_for("connect:search").environments_for() is None
+    assert specs.meta_for("samsclub:sponsored").environments_for() is None
 
 
-def test_describe_unknown_operation_raises() -> None:
+def test_single_environment_specs_are_gated():
+    assert specs.meta_for("marketplace:recommendations-api").environments_for() == ("production",)
+    assert specs.meta_for("marketplace:simulations-api").environments_for() == ("sandbox",)
+
+
+def test_unreachable_environment_raises_naming_what_is_reachable():
+    with pytest.raises(SpecError) as excinfo:
+        specs.resolve_base_url("marketplace:simulations-api", "production")
+    assert "available: sandbox" in str(excinfo.value)
+
+
+def test_fixed_base_url_appends_the_declared_suffix():
+    assert (
+        specs.resolve_base_url("marketplace:simulations-api", "sandbox")
+        == "https://sandbox.walmartapis.com/v1"
+    )
+    assert (
+        specs.resolve_base_url("marketplace:order-management", "production")
+        == "https://marketplace.walmartapis.com"
+    )
+
+
+def test_config_sourced_base_url_is_read_from_the_mapping():
+    resolved = specs.resolve_base_url(
+        "connect:search",
+        "production",
+        config_base_urls={"connect:search": "https://advertising.walmart.com/"},
+    )
+    assert resolved == "https://advertising.walmart.com"
+
+
+def test_config_sourced_base_url_missing_is_an_error():
+    with pytest.raises(SpecError) as excinfo:
+        specs.resolve_base_url("connect:search", "production", config_base_urls={})
+    assert "no base_url configured" in str(excinfo.value)
+
+
+# ── loading and pruning ───────────────────────────────────────────────────────
+
+
+def test_bundled_spec_loads_as_an_openapi_document():
+    spec = specs.load_spec("connect:search")
+    assert "paths" in spec
+    assert spec.get("openapi") or spec.get("swagger")
+
+
+def test_missing_spec_file_raises():
     with pytest.raises(SpecError):
-        discovery.describe_endpoint("search", "NoSuchOperation")
+        specs.spec_path("connect:nonexistent")
 
 
-def test_get_operation_unknown_ad_type_raises() -> None:
+def test_malformed_spec_file_names_the_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    target = tmp_path / "connect" / "search.openapi.json"
+    target.parent.mkdir(parents=True)
+    target.write_text("{not json")
+    with pytest.raises(SpecError) as excinfo:
+        specs.load_spec("connect:search")
+    assert "not valid JSON" in str(excinfo.value)
+
+
+def test_cache_takes_precedence_over_the_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    target = tmp_path / "connect" / "search.openapi.json"
+    target.parent.mkdir(parents=True)
+    target.write_text(json.dumps({"openapi": "3.0.0", "paths": {}, "info": {"title": "cached"}}))
+    assert specs.load_spec("connect:search")["info"]["title"] == "cached"
+
+
+def test_prune_keeps_small_examples_and_drops_large_ones():
+    node = {"small": {"example": "abc"}, "large": {"example": "x" * (MAX_EXAMPLE_BYTES + 1)}}
+    pruned = prune_spec(node)
+    assert pruned["small"] == {"example": "abc"}
+    assert pruned["large"] == {}
+
+
+def test_prune_drops_x_readme():
+    assert prune_spec({"x-readme": {"proxy-enabled": True}, "keep": 1}) == {"keep": 1}
+
+
+def test_prune_keeps_a_schema_field_literally_named_example():
+    node = {"properties": {"example": {"type": "string"}, "other": {"type": "int"}}}
+    assert prune_spec(node) == node
+
+
+def test_prune_treats_a_field_named_properties_as_a_schema():
+    # A field *called* "properties" has a schema of its own, not a name map, so
+    # an oversized example inside it must still be dropped.
+    node = {
+        "properties": {
+            "properties": {"type": "object", "example": {"blob": "y" * (MAX_EXAMPLE_BYTES + 1)}}
+        }
+    }
+    assert prune_spec(node) == {"properties": {"properties": {"type": "object"}}}
+
+
+def test_prune_recurses_through_lists():
+    node = {"anyOf": [{"example": "s"}, {"example": "z" * (MAX_EXAMPLE_BYTES + 1)}]}
+    assert prune_spec(node) == {"anyOf": [{"example": "s"}, {}]}
+
+
+def test_bundled_files_are_stored_verbatim():
+    # load_spec prunes on the way out; the file itself must keep what upstream
+    # served, so a refresh diff shows only real upstream change.
+    raw = json.loads(specs.bundled_path(specs.meta_for("marketplace:item-management")).read_text())
+    assert raw != specs.load_spec("marketplace:item-management")
+
+
+# ── refresh ───────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_refresh_writes_the_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        specs,
+        "fetch_spec",
+        lambda source, headers=None, timeout=30.0: {
+            "openapi": "3.0.0",
+            "info": {"version": "9.9"},
+            "paths": {"/a": {}},
+        },
+    )
+    rows = await specs.refresh("connect:search")
+    assert rows == [
+        {
+            "api": "connect:search",
+            "status": "written",
+            "version": "9.9",
+            "paths": 1,
+            "cached_at": str(tmp_path / "connect" / "search.openapi.json"),
+        }
+    ]
+    assert (tmp_path / "connect" / "search.openapi.json").is_file()
+
+
+@pytest.mark.asyncio
+async def test_refresh_reports_per_spec_errors_without_aborting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+
+    def flaky(source, headers=None, timeout=30.0):
+        if isinstance(source, UrlSource):
+            raise httpx.ConnectError("boom")
+        return {"openapi": "3.0.0", "info": {}, "paths": {}}
+
+    monkeypatch.setattr(specs, "fetch_spec", flaky)
+    rows = await specs.refresh()
+    statuses = {r["api"]: r["status"] for r in rows}
+    assert statuses["samsclub:sponsored"] == "error"
+    assert statuses["connect:search"] == "written"
+    assert len(rows) == len(SPECS)
+
+
+@pytest.mark.asyncio
+async def test_refresh_of_an_unknown_api_raises():
     with pytest.raises(SpecError):
-        discovery.get_operation("video", "whatever")
+        await specs.refresh("marketplace:nope")
+
+
+def test_write_spec_is_atomic_and_compact(tmp_path: Path):
+    target = tmp_path / "nested" / "x.json"
+    specs.write_spec(target, {"a": 1, "b": "é"})
+    assert target.read_text(encoding="utf-8") == '{"a":1,"b":"é"}\n'
+    assert list(tmp_path.rglob("*.tmp")) == []
+
+
+def test_spec_meta_defaults_are_surface_and_no_suffix():
+    meta = SpecMeta("connect:x", RegistrySource("u"))
+    assert meta.in_surface is True
+    assert meta.base_suffix == ""
+    assert meta.platform == "connect"
+    assert meta.name == "x"

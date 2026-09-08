@@ -1,15 +1,65 @@
+"""Config file loading and validation.
+
+Shape (``~/.config/mcp-walmart-ads/config.json``)::
+
+    platforms.<platform>.regions.<region>.<environment> = <auth block>
+
+The auth block's shape is decided by the platform's auth model (see
+:mod:`.platforms`), not by a tag in the file -- there is exactly one shape per
+platform, so a discriminator would only be a chance to disagree with itself:
+
+* **signature** platforms (``connect``, ``samsclub``)::
+
+      {consumer_id, private_key, private_key_version?, bearer_token,
+       base_urls: {<api>: <url>}}
+
+  ``base_urls`` is keyed by api, bare (``search``) or qualified
+  (``connect:search``); Walmart hands different tenants different hosts, so
+  these cannot be fixed by the server. One is required per api in the platform's
+  discovery surface; extra keys are allowed for the auxiliary specs an agent
+  reaches by raw method+path.
+
+* **oauth2** platforms (``marketplace``)::
+
+      {credentials: [{client_id, client_secret,
+                      advertisers: [{id, partner_id?}]}]}
+
+  Advertiser ids nest under the credential that serves them, so a secret appears
+  exactly once and a dangling advertiser reference is structurally impossible.
+  Partner ID is per-seller rather than per-credential because two ``payments``
+  operations require it as ``WM_PARTNER_ID``. Base URLs are fixed by the server
+  and absent from the file.
+
+Regions are a namespace, not a route. For ``marketplace`` every region reaches
+the same fixed hosts; the level exists because advertiser ids are only unique
+within a region.
+
+**Validation errors are isolated per platform.** A malformed ``marketplace``
+block does not stop ``connect`` from loading, and discovery -- which never
+touches credentials at all -- keeps working with a config that is broken
+everywhere. Only a file that is missing, unparseable, or has no ``platforms``
+object at all fails outright.
+"""
+
 from __future__ import annotations
 
 import json
 from collections import UserDict
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
+
+from .platforms import OAUTH2, PLATFORM_IDS, platform_for
+from .specs import API_IDS, SPECS
 
 CONFIG_PATH = Path.home() / ".config" / "mcp-walmart-ads" / "config.json"
 
 _V = TypeVar("_V")
+
+
+class ConfigError(Exception):
+    """Raised when the config file is missing, malformed, or fails validation."""
 
 
 class CaseInsensitiveDict(UserDict[str, _V]):
@@ -19,7 +69,7 @@ class CaseInsensitiveDict(UserDict[str, _V]):
     still reports the keys exactly as written in the config while
     ``config.regions["us"]`` and ``["US"]`` resolve alike. Building on
     :class:`~collections.UserDict` means every accessor and mutator
-    (``[]``, ``in``, ``get``, ``pop`` …) routes through ``__getitem__`` /
+    (``[]``, ``in``, ``get``, ``pop`` ...) routes through ``__getitem__`` /
     ``__setitem__``, keeping the case-insensitive behavior uniform.
     """
 
@@ -45,8 +95,78 @@ class CaseInsensitiveDict(UserDict[str, _V]):
         return isinstance(key, str) and key.casefold() in self._folded
 
 
+# ── oauth2 platforms ──────────────────────────────────────────────────────────
+
+
 @dataclass(frozen=True)
-class EnvConfig:
+class Advertiser:
+    """One seller: its advertiser (profile) id and optional Walmart Partner ID."""
+
+    id: int
+    partner_id: str | None = None
+
+
+@dataclass(frozen=True)
+class Credential:
+    """One client credential and the advertisers it serves."""
+
+    client_id: str
+    client_secret: str
+    advertisers: tuple[Advertiser, ...]
+
+    @property
+    def advertiser_ids(self) -> tuple[int, ...]:
+        return tuple(a.id for a in self.advertisers)
+
+
+@dataclass(frozen=True)
+class OAuth2Env:
+    """One region+environment of an oauth2 platform: credentials and their index."""
+
+    platform: str
+    region: str
+    environment: str
+    credentials: tuple[Credential, ...]
+    by_advertiser: dict[int, Credential] = field(default_factory=dict)
+    advertiser_records: dict[int, Advertiser] = field(default_factory=dict)
+
+    @property
+    def advertisers(self) -> tuple[int, ...]:
+        return tuple(sorted(self.by_advertiser))
+
+    def partner_id_for(self, advertiser_id: int) -> str | None:
+        """The seller's Walmart Partner ID, when the config supplies one."""
+        record = self.advertiser_records.get(advertiser_id)
+        return record.partner_id if record is not None else None
+
+    def credential_for(self, advertiser_id: int) -> Credential:
+        """Resolve the credential serving ``advertiser_id``.
+
+        Raises :class:`ConfigError` naming the configured ids -- there is no
+        default advertiser, so a wrong id must fail loudly.
+        """
+        credential = self.by_advertiser.get(advertiser_id)
+        if credential is not None:
+            return credential
+        where = f"platforms.{self.platform}.regions.{self.region}.{self.environment}"
+        if not self.by_advertiser:
+            raise ConfigError(f"no credentials configured for {where}")
+        known = ", ".join(str(a) for a in self.advertisers)
+        raise ConfigError(
+            f"advertiser {advertiser_id} not configured for {where} (configured: {known})"
+        )
+
+
+# ── signature platforms ───────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class SignatureEnv:
+    """One region+environment of a signature platform: its key material and hosts."""
+
+    platform: str
+    region: str
+    environment: str
     consumer_id: str
     private_key_pem: str
     private_key_version: str
@@ -54,70 +174,372 @@ class EnvConfig:
     base_urls: dict[str, str]
 
 
+EnvConfig = SignatureEnv | OAuth2Env
+
+
 @dataclass(frozen=True)
 class Config:
-    regions: CaseInsensitiveDict[CaseInsensitiveDict[EnvConfig]]
+    """Loaded config: per-platform environments, plus per-platform load errors."""
+
+    platforms: CaseInsensitiveDict[CaseInsensitiveDict[CaseInsensitiveDict[EnvConfig]]]
     response_cache_ttl: int
     truncate_threshold: int
+    platform_errors: dict[str, list[str]] = field(default_factory=dict)
+
+    def env(self, platform: str, region: str, environment: str) -> EnvConfig:
+        """Resolve one environment, raising this platform's own errors if it failed."""
+        errors = self.platform_errors.get(platform)
+        if errors:
+            raise ConfigError(
+                f"platform {platform!r} failed config validation:\n"
+                + "\n".join(f"  - {e}" for e in errors)
+            )
+        regions = self.platforms.get(platform)
+        if regions is None:
+            known = ", ".join(self.platforms.keys()) or "none"
+            raise ConfigError(f"platform {platform!r} is not configured (configured: {known})")
+        envs = regions.get(region)
+        if envs is None:
+            known = ", ".join(regions.keys()) or "none"
+            raise ConfigError(
+                f"region {region!r} not configured for platform {platform!r} (configured: {known})"
+            )
+        env_cfg = envs.get(environment)
+        if env_cfg is None:
+            known = ", ".join(envs.keys()) or "none"
+            raise ConfigError(
+                f"environment {environment!r} not configured for {platform}/{region} "
+                f"(configured: {known})"
+            )
+        return env_cfg
 
 
-def _resolve_key_path(raw: str, config_dir: Path) -> str:
-    p = Path(raw).expanduser()
-    if not p.is_absolute():
-        p = (config_dir / p).resolve()
-    return p.read_text().strip()
+# ── loading ───────────────────────────────────────────────────────────────────
 
 
-def load_config(path: Path = CONFIG_PATH) -> Config:
+def _surface_apis(platform: str) -> tuple[str, ...]:
+    return tuple(m.spec_id for m in SPECS if m.platform == platform and m.in_surface)
+
+
+def _normalize_api_key(key: str, platform: str) -> str:
+    """Accept ``search`` or ``connect:search`` for a base_urls key."""
+    return key if ":" in key else f"{platform}:{key}"
+
+
+def _load_advertiser(raw: Any, *, where: str, errors: list[str]) -> Advertiser | None:
+    """Parse an ``{"id": …, "partner_id": …}`` entry."""
+    if not isinstance(raw, dict):
+        errors.append(
+            f'{where}: must be an object, e.g. {{"id": 7060158}} — a bare id is not accepted'
+        )
+        return None
+
+    advertiser_id = raw.get("id")
+    if isinstance(advertiser_id, bool) or not isinstance(advertiser_id, int):
+        errors.append(f"{where}.id: required, must be an integer")
+        return None
+
+    partner_id = raw.get("partner_id")
+    if partner_id is not None:
+        if isinstance(partner_id, bool) or not isinstance(partner_id, (int, str)):
+            errors.append(f"{where}.partner_id: must be a string or integer")
+            return None
+        partner_id = str(partner_id)
+        if not partner_id:
+            errors.append(f"{where}.partner_id: must not be empty")
+            return None
+
+    unknown = set(raw) - {"id", "partner_id"}
+    if unknown:
+        errors.append(f"{where}: unknown field(s) {', '.join(sorted(unknown))}")
+
+    return Advertiser(id=advertiser_id, partner_id=partner_id)
+
+
+def _load_credential(raw: Any, *, where: str, errors: list[str]) -> Credential | None:
+    if not isinstance(raw, dict):
+        errors.append(f"{where}: must be an object")
+        return None
+
+    client_id = raw.get("client_id")
+    if not isinstance(client_id, str) or not client_id:
+        errors.append(f"{where}.client_id: required, must be a non-empty string")
+        client_id = ""
+
+    secret = raw.get("client_secret")
+    if not isinstance(secret, str) or not secret:
+        errors.append(f"{where}.client_secret: required, must be a non-empty string")
+        secret = ""
+
+    raw_advertisers = raw.get("advertisers")
+    advertisers: list[Advertiser] = []
+    if not isinstance(raw_advertisers, list) or not raw_advertisers:
+        errors.append(f"{where}.advertisers: required, must be a non-empty list")
+    else:
+        for index, item in enumerate(raw_advertisers):
+            advertiser = _load_advertiser(
+                item, where=f"{where}.advertisers[{index}]", errors=errors
+            )
+            if advertiser is not None:
+                advertisers.append(advertiser)
+
+    unknown = set(raw) - {"client_id", "client_secret", "advertisers"}
+    if unknown:
+        errors.append(f"{where}: unknown field(s) {', '.join(sorted(unknown))}")
+
+    if not client_id or not secret or not advertisers:
+        return None
+    return Credential(client_id=client_id, client_secret=secret, advertisers=tuple(advertisers))
+
+
+def _load_oauth2_env(
+    raw: Any, *, platform: str, region: str, environment: str, errors: list[str]
+) -> OAuth2Env:
+    where = f"platforms.{platform}.regions.{region}.{environment}"
+    if not isinstance(raw, dict):
+        errors.append(f"{where}: must be an object")
+        raw = {}
+
+    raw_credentials = raw.get("credentials")
+    credentials: list[Credential] = []
+    if raw_credentials is None:
+        # Allowed: a half-configured environment still loads, and fails at call
+        # time. Discovery tools never touch credentials.
+        raw_credentials = []
+    elif not isinstance(raw_credentials, list):
+        errors.append(f"{where}.credentials: must be a list")
+        raw_credentials = []
+    elif not raw_credentials:
+        errors.append(f"{where}.credentials: must not be empty (omit the key instead)")
+
+    for index, item in enumerate(raw_credentials):
+        credential = _load_credential(item, where=f"{where}.credentials[{index}]", errors=errors)
+        if credential is not None:
+            credentials.append(credential)
+
+    unknown = set(raw) - {"credentials"}
+    if unknown:
+        errors.append(f"{where}: unknown field(s) {', '.join(sorted(unknown))}")
+
+    index_by_advertiser: dict[int, Credential] = {}
+    records: dict[int, Advertiser] = {}
+    for credential in credentials:
+        for advertiser in credential.advertisers:
+            existing = index_by_advertiser.get(advertiser.id)
+            if existing is not None:
+                errors.append(
+                    f"{where}: advertiser {advertiser.id} is claimed by two credentials "
+                    f"({existing.client_id} and {credential.client_id})"
+                )
+                continue
+            index_by_advertiser[advertiser.id] = credential
+            records[advertiser.id] = advertiser
+
+    return OAuth2Env(
+        platform=platform,
+        region=region,
+        environment=environment,
+        credentials=tuple(credentials),
+        by_advertiser=index_by_advertiser,
+        advertiser_records=records,
+    )
+
+
+def _load_signature_env(
+    raw: Any,
+    *,
+    platform: str,
+    region: str,
+    environment: str,
+    config_dir: Path,
+    errors: list[str],
+) -> SignatureEnv | None:
+    where = f"platforms.{platform}.regions.{region}.{environment}"
+    if not isinstance(raw, dict):
+        errors.append(f"{where}: must be an object")
+        return None
+
+    local: list[str] = []
+    for required in ("consumer_id", "private_key", "bearer_token", "base_urls"):
+        if not raw.get(required):
+            local.append(f"{where}.{required}: required")
+
+    raw_base_urls = raw.get("base_urls")
+    base_urls: dict[str, str] = {}
+    if raw_base_urls is not None:
+        if not isinstance(raw_base_urls, dict):
+            local.append(f"{where}.base_urls: must be an object of api -> url")
+        else:
+            for key, value in raw_base_urls.items():
+                api = _normalize_api_key(str(key), platform)
+                if api not in API_IDS and api not in {m.spec_id for m in SPECS}:
+                    local.append(f"{where}.base_urls.{key}: unknown api for platform {platform!r}")
+                    continue
+                if not isinstance(value, str) or not value:
+                    local.append(f"{where}.base_urls.{key}: must be a non-empty URL string")
+                    continue
+                base_urls[api] = value
+            for api in _surface_apis(platform):
+                if api not in base_urls:
+                    local.append(f"{where}.base_urls.{api.partition(':')[2]}: required")
+
+    pem = ""
+    raw_key = raw.get("private_key")
+    if isinstance(raw_key, str) and raw_key:
+        path = Path(raw_key).expanduser()
+        if not path.is_absolute():
+            path = (config_dir / path).resolve()
+        try:
+            pem = path.read_text(encoding="utf-8").strip()
+        except OSError as e:
+            local.append(f"{where}.private_key: cannot read {path} ({e})")
+    elif raw_key is not None and not isinstance(raw_key, str):
+        local.append(f"{where}.private_key: must be a path string")
+
+    unknown = set(raw) - {
+        "consumer_id",
+        "private_key",
+        "private_key_version",
+        "bearer_token",
+        "base_urls",
+    }
+    if unknown:
+        local.append(f"{where}: unknown field(s) {', '.join(sorted(unknown))}")
+
+    errors.extend(local)
+    if local:
+        return None
+
+    return SignatureEnv(
+        platform=platform,
+        region=region,
+        environment=environment,
+        consumer_id=str(raw["consumer_id"]),
+        private_key_pem=pem,
+        private_key_version=str(raw.get("private_key_version", "1")),
+        bearer_token=str(raw["bearer_token"]),
+        base_urls=base_urls,
+    )
+
+
+def _load_platform(
+    raw: Any, *, platform: str, config_dir: Path, errors: list[str]
+) -> CaseInsensitiveDict[CaseInsensitiveDict[EnvConfig]]:
+    regions: CaseInsensitiveDict[CaseInsensitiveDict[EnvConfig]] = CaseInsensitiveDict()
+    meta = platform_for(platform)
+
+    if not isinstance(raw, dict):
+        errors.append(f"platforms.{platform}: must be an object")
+        return regions
+
+    raw_regions = raw.get("regions")
+    if not isinstance(raw_regions, dict) or not raw_regions:
+        errors.append(f"platforms.{platform}.regions: required, must be a non-empty object")
+        return regions
+
+    unknown = set(raw) - {"regions"}
+    if unknown:
+        errors.append(f"platforms.{platform}: unknown field(s) {', '.join(sorted(unknown))}")
+
+    for region, raw_envs in raw_regions.items():
+        region_envs: CaseInsensitiveDict[EnvConfig] = CaseInsensitiveDict()
+        regions[region] = region_envs
+        if not isinstance(raw_envs, dict) or not raw_envs:
+            errors.append(f"platforms.{platform}.regions.{region}: must be a non-empty object")
+            continue
+        for environment, raw_env in raw_envs.items():
+            if meta.environments is not None and environment not in meta.environments:
+                errors.append(
+                    f"platforms.{platform}.regions.{region}.{environment}: unknown environment "
+                    f"(expected one of {', '.join(meta.environments)})"
+                )
+                continue
+            if meta.auth == OAUTH2:
+                region_envs[environment] = _load_oauth2_env(
+                    raw_env,
+                    platform=platform,
+                    region=region,
+                    environment=environment,
+                    errors=errors,
+                )
+            else:
+                signature_env = _load_signature_env(
+                    raw_env,
+                    platform=platform,
+                    region=region,
+                    environment=environment,
+                    config_dir=config_dir,
+                    errors=errors,
+                )
+                if signature_env is not None:
+                    region_envs[environment] = signature_env
+
+    return regions
+
+
+def load_config(path: Path | None = None) -> Config:
+    """Load and validate the config file, reporting every problem at once.
+
+    ``path`` is resolved at call time rather than bound as a default so the
+    location stays overridable.
+    """
+    path = CONFIG_PATH if path is None else path
     if not path.exists():
-        raise RuntimeError(
+        raise ConfigError(
             f"Config file not found at {path}. Create it based on config.example.json."
         )
 
-    raw = json.loads(path.read_text())
-    config_dir = path.parent
-    missing: list[str] = []
-    regions: CaseInsensitiveDict[CaseInsensitiveDict[EnvConfig]] = CaseInsensitiveDict()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise ConfigError(f"Config file at {path} is not valid JSON: {e}") from e
+    if not isinstance(raw, dict):
+        raise ConfigError(f"Config file at {path} must contain a JSON object")
 
-    for region, envs in raw.get("regions", {}).items():
-        region_envs: CaseInsensitiveDict[EnvConfig] = CaseInsensitiveDict()
-        regions[region] = region_envs
-        for env, fields in envs.items():
-            prefix = f"regions.{region}.{env}"
-            for required in ("consumer_id", "private_key", "bearer_token", "base_urls"):
-                if not fields.get(required):
-                    missing.append(f"{prefix}.{required}")
+    raw_platforms = raw.get("platforms")
+    if not isinstance(raw_platforms, dict) or not raw_platforms:
+        raise ConfigError("platforms: required, must be a non-empty object")
 
-            if missing:
-                continue
+    top_errors: list[str] = []
+    platform_errors: dict[str, list[str]] = {}
+    platforms: CaseInsensitiveDict[CaseInsensitiveDict[CaseInsensitiveDict[EnvConfig]]]
+    platforms = CaseInsensitiveDict()
 
-            try:
-                pem = _resolve_key_path(fields["private_key"], config_dir)
-            except (FileNotFoundError, OSError) as e:
-                missing.append(f"{prefix}.private_key ({e})")
-                continue
-
-            base_urls: dict[str, str] = fields["base_urls"]
-            for ad_type in ("search", "display"):
-                if ad_type not in base_urls:
-                    missing.append(f"{prefix}.base_urls.{ad_type}")
-
-            regions[region][env] = EnvConfig(
-                consumer_id=fields["consumer_id"],
-                private_key_pem=pem,
-                private_key_version=str(fields.get("private_key_version", "1")),
-                bearer_token=fields["bearer_token"],
-                base_urls=base_urls,
+    for platform, raw_platform in raw_platforms.items():
+        if platform not in PLATFORM_IDS:
+            top_errors.append(
+                f"platforms.{platform}: unknown platform "
+                f"(expected one of {', '.join(PLATFORM_IDS)})"
             )
-
-    if missing:
-        raise RuntimeError(
-            "Config validation failed. Missing or invalid fields:\n"
-            + "\n".join(f"  - {m}" for m in missing)
+            continue
+        errors: list[str] = []
+        platforms[platform] = _load_platform(
+            raw_platform, platform=platform, config_dir=path.parent, errors=errors
         )
+        if errors:
+            platform_errors[platform] = errors
+
+    ttl = _positive_int(raw, "response_cache_ttl", 3600, top_errors)
+    threshold = _positive_int(raw, "truncate_threshold", 1024, top_errors)
+
+    unknown = set(raw) - {"platforms", "response_cache_ttl", "truncate_threshold"}
+    if unknown:
+        top_errors.append(f"unknown top-level field(s) {', '.join(sorted(unknown))}")
+
+    if top_errors:
+        raise ConfigError("Config validation failed:\n" + "\n".join(f"  - {e}" for e in top_errors))
 
     return Config(
-        regions=regions,
-        response_cache_ttl=int(raw.get("response_cache_ttl", 3600)),
-        truncate_threshold=int(raw.get("truncate_threshold", 1024)),
+        platforms=platforms,
+        response_cache_ttl=ttl,
+        truncate_threshold=threshold,
+        platform_errors=platform_errors,
     )
+
+
+def _positive_int(raw: dict[str, Any], key: str, default: int, errors: list[str]) -> int:
+    value = raw.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        errors.append(f"{key}: must be a positive integer")
+        return default
+    return value

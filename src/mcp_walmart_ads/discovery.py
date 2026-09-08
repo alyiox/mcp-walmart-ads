@@ -1,10 +1,25 @@
 """Spec-driven endpoint discovery over the bundled/cached OpenAPI specs.
 
-Indexes operations by ``operationId`` for the two canonical specs (one per
-``ad_type``) and resolves an operation's transitive ``components.schemas``
-closure, so an agent can list/inspect endpoints and call them by id without the
-full spec. Specs are small and reloaded from disk per call, so a freshly
-refreshed spec is picked up immediately.
+Indexes every operation across all 33 specs and resolves an operation's
+transitive ``components.schemas`` closure, so an agent can list/inspect
+endpoints and call them by id without the full spec.
+
+An operation is addressed three ways, in decreasing specificity:
+
+* ``api`` + bare ``operationId`` -- the api scopes the lookup.
+* a qualified id, ``<api>:<operationId>`` (e.g.
+  ``marketplace:order-management:getAllOrders``). An api id always contains
+  exactly one colon and an operationId never contains one, so the split is
+  unambiguous.
+* a bare ``operationId`` alone, which resolves when it is unique across every
+  spec. Some ids are not: ``getAnItem``, ``getReturns``, ``getTaxonomyResponse``
+  and ``priceBulkUploads`` each appear in several Marketplace specs, and those
+  raise an error naming the candidates rather than guessing.
+
+Eight operations declare no ``operationId`` at all and get ``METHOD /path``.
+
+Indexes are cached per spec file and invalidated on mtime change, so a freshly
+refreshed spec is picked up without restarting the server.
 """
 
 from __future__ import annotations
@@ -14,37 +29,126 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .specs import AD_TYPE_SPEC, SpecError, load_spec
+from .platforms import platform_for
+from .specs import API_IDS, SpecError, load_spec, meta_for, spec_path
 
 HTTP_METHODS = frozenset({"get", "put", "post", "delete", "options", "head", "patch", "trace"})
 SCHEMA_REF_PREFIX = "#/components/schemas/"
 _REF_RE = re.compile(r'"\$ref"\s*:\s*"([^"]+)"')
 
+# Headers the server owns end to end. They are injected from config and the
+# operation's own declarations, and stripped from ``describe_endpoint`` output so
+# an agent never tries to supply a token, a signature, or the one legal
+# WM_MARKET value.
+MANAGED_HEADERS = frozenset(
+    {
+        "authorization",
+        "accept",
+        "content-type",
+        "wm_sec.access_token",
+        "wm_svc.name",
+        "wm_qos.correlation_id",
+        "wm_market",
+        "wm_sandbox",
+        "wm_global_version",
+        "wm_consumer.channel.type",
+        "wm_consumer.id",
+        "wm_consumer.intimestamp",
+        "wm_partner.id",
+        "wm_partner_id",
+        "wm_sec.timestamp",
+        "wm_sec.auth_signature",
+        "wm_sec.key_version",
+    }
+)
+
 
 @dataclass(frozen=True)
 class Operation:
     operation_id: str
-    ad_type: str
+    api: str
     method: str
     path: str
     summary: str
     tags: tuple[str, ...]
     raw: dict[str, Any]
 
+    @property
+    def qualified_id(self) -> str:
+        return f"{self.api}:{self.operation_id}"
 
-def _spec_id_for(ad_type: str) -> str:
-    spec_id = AD_TYPE_SPEC.get(ad_type)
-    if spec_id is None:
-        known = ", ".join(sorted(AD_TYPE_SPEC))
-        raise SpecError(f"no spec for ad_type {ad_type!r} (known: {known})")
-    return spec_id
+    @property
+    def platform(self) -> str:
+        return self.api.partition(":")[0]
+
+    def header_params(self) -> list[dict[str, Any]]:
+        return [
+            p
+            for p in (self.raw.get("parameters") or [])
+            if isinstance(p, dict) and p.get("in") == "header"
+        ]
+
+    def declares_header(self, name: str) -> bool:
+        folded = name.casefold()
+        return any(str(p.get("name", "")).casefold() == folded for p in self.header_params())
+
+    def response_media_types(self) -> tuple[str, ...]:
+        """Media types the operation declares for its success responses.
+
+        Some endpoints negotiate strictly and answer ``Accept: */*`` with a 406
+        listing what they can produce, so a request has to name a concrete type.
+        """
+        out: list[str] = []
+        for code, response in (self.raw.get("responses") or {}).items():
+            if not str(code).startswith("2") or not isinstance(response, dict):
+                continue
+            for media_type in response.get("content") or {}:
+                if media_type not in out:
+                    out.append(media_type)
+        return tuple(out)
+
+    def header_enum(self, name: str) -> str | None:
+        """First declared enum value for a header, when the spec constrains it.
+
+        ``WM_MARKET`` is spelled ``US`` in most specs and ``us`` in two; sending
+        the operation's own casing avoids arguing with the validator.
+        """
+        folded = name.casefold()
+        for param in self.header_params():
+            if str(param.get("name", "")).casefold() != folded:
+                continue
+            schema = param.get("schema")
+            if not isinstance(schema, dict):
+                continue
+            enum = schema.get("enum")
+            if isinstance(enum, list) and enum and isinstance(enum[0], str):
+                return enum[0]
+        return None
 
 
-def _index(ad_type: str) -> tuple[dict[str, Any], dict[str, Operation]]:
-    """Load the spec for ``ad_type`` and build its operationId → Operation index."""
-    spec = load_spec(_spec_id_for(ad_type))
+# api -> (mtime, {operation_id: Operation})
+_index_cache: dict[str, tuple[float, dict[str, Operation]]] = {}
+_spec_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _load_cached(api: str) -> tuple[dict[str, Any], dict[str, Operation]]:
+    """Load a spec and its operation index, reusing the cache while mtime holds."""
+    path = spec_path(api)
+    mtime = path.stat().st_mtime
+
+    cached_spec = _spec_cache.get(api)
+    cached_index = _index_cache.get(api)
+    if (
+        cached_spec is not None
+        and cached_index is not None
+        and cached_spec[0] == mtime
+        and cached_index[0] == mtime
+    ):
+        return cached_spec[1], cached_index[1]
+
+    spec = load_spec(api)
     ops: dict[str, Operation] = {}
-    for path, methods in (spec.get("paths") or {}).items():
+    for path_str, methods in (spec.get("paths") or {}).items():
         if not isinstance(methods, dict):
             continue
         for method, raw in methods.items():
@@ -52,84 +156,183 @@ def _index(ad_type: str) -> tuple[dict[str, Any], dict[str, Operation]]:
                 continue
             declared = raw.get("operationId")
             op_id = (
-                declared if isinstance(declared, str) and declared else f"{method.upper()} {path}"
+                declared
+                if isinstance(declared, str) and declared
+                else f"{method.upper()} {path_str}"
             )
             tags = raw.get("tags")
             ops[op_id] = Operation(
                 operation_id=op_id,
-                ad_type=ad_type,
+                api=api,
                 method=method.lower(),
-                path=path,
+                path=path_str,
                 summary=str(raw.get("summary") or ""),
                 tags=tuple(tags) if isinstance(tags, list) else (),
                 raw=raw,
             )
+
+    _spec_cache[api] = (mtime, spec)
+    _index_cache[api] = (mtime, ops)
     return spec, ops
 
 
+def _available_apis(platform: str | None = None) -> list[str]:
+    """Api ids that have a spec file on disk, in declaration order."""
+    available: list[str] = []
+    for api in API_IDS:
+        if platform is not None and meta_for(api).platform != platform:
+            continue
+        try:
+            spec_path(api)
+        except SpecError:
+            continue
+        available.append(api)
+    return available
+
+
+def list_apis() -> list[dict[str, Any]]:
+    """One row per api: its id, platform, environments, operation count, and title."""
+    rows: list[dict[str, Any]] = []
+    for api in _available_apis():
+        spec, ops = _load_cached(api)
+        info = spec.get("info") or {}
+        meta = meta_for(api)
+        environments = meta.environments_for()
+        rows.append(
+            {
+                "api": api,
+                "platform": meta.platform,
+                "title": info.get("title"),
+                "version": info.get("version"),
+                "operations": len(ops),
+                "environments": list(environments) if environments else "from config",
+            }
+        )
+    return rows
+
+
 def list_endpoints(
-    ad_type: str,
     *,
     query: str | None = None,
+    api: str | None = None,
+    platform: str | None = None,
     tag: str | None = None,
     method: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Return slim records for operations in ``ad_type``'s spec, with filters.
+    """Return slim records for operations across every api, with filters.
 
-    ``query`` matches (case-insensitive substring) operationId, path, or
-    summary; ``tag`` filters by OpenAPI tag; ``method`` filters by HTTP verb.
+    ``query`` matches (case-insensitive substring) operation id, path, or
+    summary; ``api`` limits to one spec, ``platform`` to one family; ``tag``
+    filters by OpenAPI tag; ``method`` filters by HTTP verb.
     """
-    _, ops = _index(ad_type)
-    q = query.lower() if query else None
-    m = method.lower() if method else None
+    if api is not None:
+        meta_for(api)  # raises SpecError on an unknown api
+        apis = [api]
+    else:
+        if platform is not None:
+            platform_for(platform)  # raises UnknownPlatform
+        apis = _available_apis(platform)
+
+    q = query.casefold() if query else None
+    m = method.casefold() if method else None
     out: list[dict[str, Any]] = []
-    for op in ops.values():
-        if q and not (
-            q in op.operation_id.lower() or q in op.path.lower() or q in op.summary.lower()
-        ):
-            continue
-        if tag and tag not in op.tags:
-            continue
-        if m and m != op.method:
-            continue
-        out.append(
-            {
-                "operation_id": op.operation_id,
-                "method": op.method.upper(),
-                "path": op.path,
-                "summary": op.summary,
-                "tags": list(op.tags),
-            }
-        )
-    return sorted(out, key=lambda r: (r["path"], r["method"]))
+    for one in apis:
+        _, ops = _load_cached(one)
+        for op in ops.values():
+            if q and not (
+                q in op.operation_id.casefold()
+                or q in op.path.casefold()
+                or q in op.summary.casefold()
+            ):
+                continue
+            if tag and tag not in op.tags:
+                continue
+            if m and m != op.method:
+                continue
+            out.append(
+                {
+                    "operation_id": op.qualified_id,
+                    "api": op.api,
+                    "method": op.method.upper(),
+                    "path": op.path,
+                    "summary": op.summary,
+                    "tags": list(op.tags),
+                }
+            )
+    return sorted(out, key=lambda r: (r["api"], r["path"], r["method"]))
 
 
-def get_operation(ad_type: str, operation_id: str) -> Operation:
-    _, ops = _index(ad_type)
-    op = ops.get(operation_id)
-    if op is None:
+def get_operation(operation_id: str, *, api: str | None = None) -> Operation:
+    """Resolve an operation by bare id within ``api``, qualified id, or unique bare id."""
+    if api is not None:
+        meta_for(api)
+        bare = operation_id
+        prefix, _, tail = operation_id.rpartition(":")
+        if prefix == api:
+            bare = tail
+        _, ops = _load_cached(api)
+        op = ops.get(bare)
+        if op is None:
+            raise SpecError(
+                f"operation {bare!r} not found in api {api!r} (use list_endpoints to discover ids)"
+            )
+        return op
+
+    prefix, _, tail = operation_id.rpartition(":")
+    if prefix in API_IDS:
+        return get_operation(tail, api=prefix)
+
+    matches = [
+        op
+        for one in _available_apis()
+        for op in [_load_cached(one)[1].get(operation_id)]
+        if op is not None
+    ]
+    if not matches:
         raise SpecError(
-            f"operation {operation_id!r} not found in {ad_type} spec "
-            "(use list_endpoints to discover ids)"
+            f"operation {operation_id!r} not found in any api (use list_endpoints to discover ids)"
         )
-    return op
-
-
-def describe_endpoint(ad_type: str, operation_id: str) -> dict[str, Any]:
-    """Return one operation plus its transitive ``components.schemas`` closure."""
-    spec, ops = _index(ad_type)
-    op = ops.get(operation_id)
-    if op is None:
+    if len(matches) > 1:
+        candidates = ", ".join(op.qualified_id for op in matches)
         raise SpecError(
-            f"operation {operation_id!r} not found in {ad_type} spec "
-            "(use list_endpoints to discover ids)"
+            f"operation id {operation_id!r} is ambiguous — qualify it as one of: {candidates}"
         )
+    return matches[0]
+
+
+def describe_endpoint(operation_id: str, *, api: str | None = None) -> dict[str, Any]:
+    """Return one operation plus its transitive ``components.schemas`` closure.
+
+    Server-managed headers are removed from the parameter list: they are injected
+    from config and the spec itself, so surfacing them would invite an agent to
+    supply an access token, a signature, or the single legal ``WM_MARKET`` value.
+    """
+    op = get_operation(operation_id, api=api)
+    spec, _ = _load_cached(op.api)
+    meta = meta_for(op.api)
+    environments = meta.environments_for()
+
+    raw = dict(op.raw)
+    params = raw.get("parameters")
+    if isinstance(params, list):
+        raw["parameters"] = [
+            p
+            for p in params
+            if not (
+                isinstance(p, dict)
+                and p.get("in") == "header"
+                and str(p.get("name", "")).casefold() in MANAGED_HEADERS
+            )
+        ]
+
     return {
-        "ad_type": ad_type,
-        "operation_id": op.operation_id,
+        "operation_id": op.qualified_id,
+        "api": op.api,
+        "platform": op.platform,
         "method": op.method.upper(),
         "path": op.path,
-        "operation": op.raw,
+        "environments": list(environments) if environments else "from config",
+        "operation": raw,
         "components": {"schemas": _resolve_refs(spec, op.raw)},
     }
 
