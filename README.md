@@ -120,7 +120,7 @@ platform, so no discriminator field is needed.
   "platforms": {
     "walmart:ads": {
       "regions": {
-        "US": {
+        "us": {
           "production": {
             "consumer_id": "your-consumer-id",
             "private_key": "./keys/walmart-ads/us-prod.pem",
@@ -156,7 +156,7 @@ Environment names are free-form for these platforms — Walmart may issue a tena
   "platforms": {
     "walmart:marketplace": {
       "regions": {
-        "US": {
+        "us": {
           "production": {
             "credentials": [
               {

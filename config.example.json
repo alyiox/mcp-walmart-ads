@@ -4,7 +4,7 @@
   "platforms": {
     "walmart:ads": {
       "regions": {
-        "US": {
+        "us": {
           "production": {
             "consumer_id": "your-consumer-id",
             "private_key": "./keys/walmart-ads/us-prod.pem",
@@ -30,7 +30,7 @@
     },
     "walmart:marketplace": {
       "regions": {
-        "US": {
+        "us": {
           "production": {
             "credentials": [
               {
@@ -57,7 +57,7 @@
     },
     "samsclub:ads": {
       "regions": {
-        "US": {
+        "us": {
           "production": {
             "consumer_id": "your-consumer-id",
             "private_key": "./keys/samsclub-ads/us-prod.pem",
