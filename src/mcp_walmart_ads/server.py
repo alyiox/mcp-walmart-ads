@@ -208,9 +208,8 @@ def cached_curl_resource(request_id: str) -> str:
 @mcp.tool(
     name="list_endpoints",
     description=(
-        "[Walmart] List OpenAPI operations across every api, with optional filters. "
-        "Returned operation ids are qualified (api:operationId) and can be passed "
-        "straight to describe_endpoint or call_endpoint."
+        "[Walmart] List OpenAPI operations across every api. Returned operation ids can be "
+        "passed straight to describe_endpoint or call_endpoint."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -263,12 +262,10 @@ async def list_endpoints(
 @mcp.tool(
     name="describe_endpoint",
     description=(
-        "[Walmart] Describe one OpenAPI operation with its schema closure. "
-        "Returns the operation plus every components.schemas entry reachable from it, "
-        "so request bodies and responses can be built without the full spec. "
-        "Server-managed auth and QoS headers are omitted — do not supply them. "
-        "mirrored_by, when present, names apis on other retailers serving the same "
-        "surface, where this operation id usually exists too."
+        "[Walmart] Describe one OpenAPI operation. Returns it plus every components.schemas "
+        "entry reachable from it, so a request body can be built without the full spec. Server- "
+        "managed auth and QoS headers are omitted — do not supply them. mirrored_by names other "
+        "retailers serving the same surface."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -327,13 +324,11 @@ def _resolve_target(
 @mcp.tool(
     name="call_endpoint",
     description=(
-        "[Walmart] Execute an authenticated API request against any configured platform. "
-        "Identify the endpoint by operation_id, or by raw method + path together with an "
-        "api; a raw method+path also reaches alpha/beta/unpublished endpoints absent from "
-        "the bundled specs. Auth, signature, market, and correlation headers are added by "
-        "the server. Bodies over the configured byte threshold are truncated to a preview; read "
-        "the returned cached_at resource (wmt://responses/{request_id}) for full data. The "
-        "result also carries a curl reference (wmt://curl/{request_id})."
+        "[Walmart] Execute an authenticated API request. Identify the endpoint by operation_id, "
+        "or by method + path with an api — a raw path also reaches alpha/beta/unpublished "
+        "endpoints absent from the bundled specs. Auth, signature, market, and correlation "
+        "headers are added by the server. A body over the configured threshold is truncated to "
+        "a preview; read the returned cached_at resource for the whole of it."
     ),
     # Passthrough to any spec operation — the caller picks the verb, so assume
     # the most cautious shape: writes, may delete, retries are not safe.
@@ -511,13 +506,10 @@ async def call_endpoint(
 @mcp.tool(
     name="download_file",
     description=(
-        "[Walmart] Download a report, label, or snapshot from an authenticated endpoint. "
-        "Give a full url (e.g. the `details` URL from a display snapshot poll or a "
-        "Marketplace report response), or operation_id, or api with method and path. "
-        "With dest_path the bytes are written there; without it they are gunzipped when "
-        "gzipped and cached, and the result carries cached_at "
-        "(wmt://responses/{request_id}). Redirects to signed storage URLs are followed "
-        "for you, shedding credentials off-host; the result lists the hops in `urls`."
+        "[Walmart] Download a report, label, or snapshot. Give a full url — such as the "
+        "`details` URL from a display snapshot poll, or a Marketplace report url — or an "
+        "operation_id, or an api with method and path. Written to dest_path when given, "
+        "otherwise gunzipped and cached. Redirects are followed for you."
     ),
     # Writes the downloaded bytes to a local path when dest_path is given, so
     # not read-only; re-running against the same path converges.
@@ -733,9 +725,8 @@ async def download_file(
 @mcp.tool(
     name="refresh_specs",
     description=(
-        "[Walmart] Refresh bundled OpenAPI specs from their upstream sources into the "
-        "user cache, which then takes precedence over the bundled copies. Omit api to "
-        "refresh all 33."
+        "[Walmart] Refresh OpenAPI specs into the user cache, which then takes precedence over "
+        "the bundled copies. Omit api to refresh all 33."
     ),
     # Writes the user spec cache: an update, not a delete — re-running it
     # against the same upstream state converges on the same cache.
