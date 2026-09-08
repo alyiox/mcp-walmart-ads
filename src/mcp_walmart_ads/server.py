@@ -43,7 +43,7 @@ mcp = MCPServer(
         "alone determines which platform, host, and auth model a call uses. Discover "
         "endpoints with list_endpoints (filter by query/api/platform/tag/method) and "
         "inspect one with describe_endpoint, which returns the operation plus its schema "
-        "closure and omits the auth and QoS headers the server injects itself. Execute "
+        "closure, minus the headers the server supplies itself. Execute "
         "with call_endpoint — by operation_id, or by raw method+path with an api. "
         "walmart:marketplace calls need an advertiser_id, which selects the credential; "
         "on the ads platforms it is an optional header. Read wmt://apis for the api "
@@ -263,8 +263,7 @@ async def list_endpoints(
     name="describe_endpoint",
     description=(
         "[Walmart] Describe one OpenAPI operation. Returns it with every components.schemas "
-        "entry reachable from it, so a request body can be built without the full spec. The "
-        "headers call_endpoint supplies itself are omitted — do not send them."
+        "entry reachable from it, so a request body can be built without the full spec."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -407,11 +406,12 @@ async def call_endpoint(
         Field(default=None, description="Query string parameters as a JSON object."),
     ] = None,
     body: Annotated[
-        dict[str, Any] | list[Any] | None,
+        dict[str, Any] | list[dict[str, Any]] | None,
         Field(
             default=None,
             description=(
-                "JSON request body for POST/PUT/PATCH (object or array when the API requires it)."
+                "JSON request body for POST/PUT/PATCH — an object, or an array of objects "
+                "where the API takes a batch."
             ),
         ),
     ] = None,
