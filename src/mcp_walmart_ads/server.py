@@ -1,10 +1,16 @@
 """MCP server exposing Walmart Connect, Sam's Club, and Walmart Marketplace APIs.
 
-Five tools over one flat ``api`` namespace. The api id carries its platform
-(``connect:search``, ``samsclub:sponsored``, ``marketplace:order-management``),
-so an operation id resolves to a platform, a base URL, and an auth model without
-the caller naming any of them -- ``api`` is only required when calling by raw
-method+path, where there is no operation to infer it from.
+Five tools over one hierarchical ``api`` namespace -- ``<retailer>:<line>:<name>``,
+as in ``walmart:ads:sponsored-products``, ``samsclub:ads:sponsored-products``,
+``walmart:marketplace:order-management``. Credentials attach at the two-segment
+prefix, so an operation id resolves to a platform, a base URL, and an auth model
+without the caller naming any of them; ``api`` is only required when calling by
+raw method+path, where there is no operation to infer it from.
+
+Two parameters carry that namespace, and only two. ``api`` is an exact id on every
+tool, and ``platform`` is the coarse filter on ``list_endpoints``. The segments
+have names -- retailer, line -- but neither is a parameter, because neither is
+independently meaningful.
 """
 
 from __future__ import annotations
@@ -155,7 +161,8 @@ def get_config() -> str:
     name="apis",
     description=(
         "[Walmart] List the api namespace — every api id, its platform, environments, "
-        "and operation count. Src: specs."
+        "operation count, and mirrored_by where another retailer serves the same "
+        "surface. Src: specs."
     ),
 )
 def get_apis() -> str:
@@ -222,8 +229,8 @@ async def list_endpoints(
         Field(
             default=None,
             description=(
-                "[Walmart] Limit to one api, e.g. marketplace:order-management "
-                "or connect:search. Src: apis."
+                "[Walmart] Limit to one api, e.g. walmart:marketplace:order-management. "
+                "A platform prefix is not accepted here — use platform for that. Src: apis."
             ),
         ),
     ] = None,
@@ -261,7 +268,9 @@ async def list_endpoints(
         "[Walmart] Describe one OpenAPI operation with its schema closure. "
         "Returns the operation plus every components.schemas entry reachable from it, "
         "so request bodies and responses can be built without the full spec. "
-        "Server-managed auth and QoS headers are omitted — do not supply them."
+        "Server-managed auth and QoS headers are omitted — do not supply them. "
+        "mirrored_by, when present, names apis on other retailers serving the same "
+        "surface, where this operation id usually exists too."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -281,7 +290,8 @@ async def describe_endpoint(
         Field(
             default=None,
             description=(
-                "[Walmart] Api to resolve a bare operation_id in, e.g. connect:search. Src: apis."
+                "[Walmart] Api to resolve a bare operation_id in, e.g. "
+                "walmart:ads:sponsored-products. Src: apis."
             ),
         ),
     ] = None,
@@ -320,12 +330,10 @@ def _resolve_target(
     name="call_endpoint",
     description=(
         "[Walmart] Execute an authenticated API request against any configured platform. "
-        "Identify the endpoint by operation_id (qualified as api:operationId, or bare when "
-        "unambiguous), or by raw method + path together with an api; raw method+path also "
-        "reaches alpha/beta/unpublished endpoints absent from the bundled specs. Auth, "
-        "signature, market, and correlation headers are added by the server. Pass file_path "
-        "to send the file as multipart/form-data, which is how Marketplace feed uploads "
-        "work. Bodies over the configured byte threshold are truncated to a preview; read "
+        "Identify the endpoint by operation_id, or by raw method + path together with an "
+        "api; a raw method+path also reaches alpha/beta/unpublished endpoints absent from "
+        "the bundled specs. Auth, signature, market, and correlation headers are added by "
+        "the server. Bodies over the configured byte threshold are truncated to a preview; read "
         "the returned cached_at resource (wmt://responses/{request_id}) for full data. The "
         "result also carries a curl reference (wmt://curl/{request_id})."
     ),
@@ -347,8 +355,9 @@ async def call_endpoint(
         str,
         Field(
             description=(
-                "[Walmart] Target environment — production, staging, or sandbox, per "
-                "platform. Src: config."
+                "[Walmart] Target environment. walmart:marketplace accepts production or "
+                "sandbox; the ads platforms accept whatever the config declares, usually "
+                "production or staging. Src: config."
             )
         ),
     ],
@@ -511,9 +520,8 @@ async def call_endpoint(
         "Marketplace report response), or operation_id, or api with method and path. "
         "With dest_path the bytes are written there; without it they are gunzipped when "
         "gzipped and cached, and the result carries cached_at "
-        "(wmt://responses/{request_id}). Follows redirects, keeping auth headers on a "
-        "relative or same-host Location and dropping credentials cross-host. The result "
-        "includes `urls`, the hop path."
+        "(wmt://responses/{request_id}). Redirects to signed storage URLs are followed "
+        "for you, shedding credentials off-host; the result lists the hops in `urls`."
     ),
     # Writes the downloaded bytes to a local path when dest_path is given, so
     # not read-only; re-running against the same path converges.
@@ -533,8 +541,9 @@ async def download_file(
         str,
         Field(
             description=(
-                "[Walmart] Target environment — production, staging, or sandbox, per "
-                "platform. Src: config."
+                "[Walmart] Target environment. walmart:marketplace accepts production or "
+                "sandbox; the ads platforms accept whatever the config declares, usually "
+                "production or staging. Src: config."
             )
         ),
     ],
@@ -750,9 +759,9 @@ async def refresh_specs(
         Field(
             default=None,
             description=(
-                "[Walmart] Refresh only this api, e.g. walmart:marketplace:order-management "
-                "or walmart:ads:sponsored-products. Includes the two auxiliary walmart:ads "
-                "specs. Omit to refresh all 33. Src: apis."
+                "[Walmart] Refresh only this api, e.g. "
+                "walmart:marketplace:order-management. The two auxiliary walmart:ads specs "
+                "are valid here. Src: apis."
             ),
         ),
     ] = None,

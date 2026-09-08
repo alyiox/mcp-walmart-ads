@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
 from pathlib import Path
 from typing import Any, get_args
 
@@ -12,6 +13,7 @@ from mcp_walmart_ads import server
 from mcp_walmart_ads.config import load_config
 from mcp_walmart_ads.platforms import PLATFORM_IDS
 from mcp_walmart_ads.resources import ResponseCache
+from mcp_walmart_ads.specs import SPEC_IDS
 from tests.conftest import raw_config
 
 
@@ -620,3 +622,93 @@ async def test_an_auxiliary_api_is_callable_by_raw_path(loaded, monkeypatch: pyt
     )
     assert result.status_code == 200
     assert seen[0].url.host == "conversions.walmart.test"
+
+
+# ── description hygiene ───────────────────────────────────────────────────────
+
+# Anything shaped like an id in prose: two or three colon-separated segments of
+# lowercase words. Catches a stale example long after the rename that made it
+# stale, which review did not.
+_ID_IN_PROSE = re.compile(r"\b[a-z][a-z0-9-]*:[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)?\b")
+
+
+def _all_descriptions(tools, resources, templates) -> dict[str, str]:
+    out: dict[str, str] = {"<instructions>": server.mcp.instructions or ""}
+    for t in tools:
+        out[t.name] = t.description or ""
+        for name, prop in t.input_schema.get("properties", {}).items():
+            out[f"{t.name}.{name}"] = prop.get("description", "")
+    for r in resources:
+        out[str(r.uri)] = r.description or ""
+    for t in templates:
+        out[str(t.uri_template)] = t.description or ""
+    return out
+
+
+@pytest.mark.asyncio
+async def test_no_description_names_an_api_or_platform_that_does_not_exist():
+    descriptions = _all_descriptions(
+        await server.mcp.list_tools(),
+        await server.mcp.list_resources(),
+        await server.mcp.list_resource_templates(),
+    )
+    known = set(SPEC_IDS) | set(PLATFORM_IDS)
+    # Ids appear inside resource URIs and prose that is not an id at all; only
+    # candidates whose first segment is a real retailer are held to the namespace.
+    retailers = {p.split(":")[0] for p in PLATFORM_IDS}
+    stale: list[str] = []
+    for where, text in descriptions.items():
+        for candidate in _ID_IN_PROSE.findall(text):
+            if candidate.split(":")[0] not in retailers:
+                continue
+            if candidate not in known:
+                stale.append(f"{where}: {candidate}")
+    assert stale == [], f"descriptions name ids that do not exist: {stale}"
+
+
+@pytest.mark.asyncio
+async def test_no_description_uses_a_pre_0_2_platform_name():
+    descriptions = _all_descriptions(
+        await server.mcp.list_tools(),
+        await server.mcp.list_resources(),
+        await server.mcp.list_resource_templates(),
+    )
+    offenders = [
+        f"{where}: {legacy}"
+        for where, text in descriptions.items()
+        for legacy in ("connect:", "samsclub:sponsored", "marketplace:order")
+        if legacy in text and f"walmart:{legacy}" not in text
+    ]
+    assert offenders == [], f"pre-0.2 ids left in descriptions: {offenders}"
+
+
+@pytest.mark.asyncio
+async def test_every_description_is_namespaced_and_non_empty():
+    descriptions = _all_descriptions(
+        await server.mcp.list_tools(),
+        await server.mcp.list_resources(),
+        await server.mcp.list_resource_templates(),
+    )
+    for where, text in descriptions.items():
+        assert text, f"{where} has no description"
+        if where != "<instructions>":
+            assert text.startswith("[Walmart]"), f"{where} is not namespaced"
+
+
+@pytest.mark.asyncio
+async def test_every_parameter_naming_a_configured_entity_declares_its_lineage():
+    # AGENTS.md: parameters referring to entities this server owns carry Src:.
+    expected = {
+        "region": "Src: config",
+        "environment": "Src: config",
+        "advertiser_id": "Src: config",
+        "api": "Src: apis",
+        "platform": "Src: apis",
+        "operation_id": "Src: operations",
+    }
+    for tool in await server.mcp.list_tools():
+        for name, prop in tool.input_schema.get("properties", {}).items():
+            tag = expected.get(name)
+            if tag is None:
+                continue
+            assert tag in prop.get("description", ""), f"{tool.name}.{name} lacks '{tag}'"
