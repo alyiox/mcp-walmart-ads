@@ -6,21 +6,34 @@ best-effort candidate spec from the HTML reference pages. The candidate is
 committed and diffed on a schedule; CI opens a PR with any change (see
 .github/workflows/spec-drift.yml). That PR is the human review gate: a reviewer
 ports real changes into the hand-authored canonical spec
-(specs/samsclub/sponsored.openapi.json) — the canonical spec is never
-overwritten automatically, so hand corrections are protected.
+(src/mcp_walmart_ads/specs/samsclub/ads/sponsored-products.openapi.json) — the
+canonical spec is never overwritten automatically, so hand corrections are
+protected. Sam's Club is the one platform needing this: every other bundled spec
+comes from the ReadMe api-registry, which serves the document directly.
 
 The candidate is intentionally flat (no $ref, no inferred enums/int formats); it
 exists to surface doc drift (added/removed/renamed endpoints, params, and body
 fields), not to replace the curated spec.
 
-Usage:
-    python scripts/build_spec.py                # write the candidate file
-    python scripts/build_spec.py --check         # exit 1 if it would change
-    python scripts/build_spec.py --out PATH      # write elsewhere (default below)
-    python scripts/build_spec.py --base URL      # override docs base for testing
+Why scrape HTML rather than ``/search/search_index.json``, which MkDocs also
+serves: that index flattens each parameter table into one run of text with no
+cell delimiters, so a row reads ``name The name of the campaign String N The
+campaign name should be unique...`` immediately followed by the next row's name.
+Anchoring on the closed Type and Required vocabularies recovered 61 of 67 rows
+and aligned both fields on only 52 -- and parameter *names* not at all, since a
+name follows the previous row's free-text Possible Values cell. It saves no
+requests either: the tables still need every page's HTML. Endpoint inventory
+alone (method and path) does come through cleanly, if that is ever all you want.
 
-Requires the `spec-build` dependency group:
-    uv run --group spec-build python scripts/build_spec.py
+Usage:
+    uv run --group spec-build python scripts/build_samsclub_spec.py
+    uv run --group spec-build python scripts/build_samsclub_spec.py --check
+    uv run --group spec-build python scripts/build_samsclub_spec.py --out PATH
+    uv run --group spec-build python scripts/build_samsclub_spec.py --base URL
+
+``--check`` exits 1 if the candidate would change, ``--out`` writes elsewhere,
+and ``--base`` points at another docs host for testing. The `spec-build`
+dependency group carries beautifulsoup4, which is not a runtime dependency.
 """
 
 from __future__ import annotations
@@ -31,19 +44,24 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from bs4 import BeautifulSoup, Tag
 
 DOC_BASE = "https://developer.samsclub.com/API"
 # Kept OUTSIDE the package (src/) on purpose: the candidate must not be bundled
-# into the wheel or loaded at runtime — it exists only for doc-drift review.
+# into the wheel or loaded at runtime — it exists only for doc-drift review. The
+# path below the root mirrors the canonical spec's, so which file a candidate
+# reviews is structural rather than something to look up.
 DEFAULT_OUT = (
     Path(__file__).resolve().parent.parent
-    / "spec-candidate"
-    / "sponsored-ads.candidate.openapi.json"
+    / "spec-candidates"
+    / "samsclub"
+    / "ads"
+    / "sponsored-products.openapi.json"
 )
-USER_AGENT = "mcp-samsclub-ads spec-builder (+https://github.com/alyiox/mcp-samsclub-ads)"
+USER_AGENT = "mcp-walmart-ads spec-builder (+https://github.com/alyiox/mcp-walmart-ads)"
 
 # Pages that are guides/FAQ, not endpoint references. Everything else in the nav
 # is probed; a page with no "End Point:" marker is skipped anyway.
@@ -216,7 +234,7 @@ def parse_page(slug: str, page_html: str) -> list[dict[str, Any]]:
         if "End Point:" not in section_text and "Endpoint:" not in section_text:
             continue
         heading = _clean(section[0].get_text()) if section else ""
-        path = _find_labeled_value(section, ("end point", "endpoint"))
+        path = _normalize_path(_find_labeled_value(section, ("end point", "endpoint")))
         method = _find_method(section)
         if not path or not method:
             continue
@@ -261,6 +279,22 @@ def _find_labeled_value(section: list[Tag], labels: tuple[str, ...]) -> str:
             full = _clean(el.get_text())
             return _clean(full[len(_clean(strong.get_text())) :].lstrip(": "))
     return ""
+
+
+def _normalize_path(raw: str) -> str:
+    """Return an OpenAPI path key from whatever the docs wrote.
+
+    Two pages spell the endpoint without its leading slash -- ``api/v1/adItems``
+    and ``api/v1/snapshot/entity``. Left alone they become separate path keys
+    from their slashed twins, so the candidate reports one endpoint as both
+    added and removed and every scheduled diff carries that false drift.
+    """
+    path = _clean(raw)
+    if not path:
+        return ""
+    if path.startswith(("http://", "https://")):
+        path = urlsplit(path).path or "/"
+    return path if path.startswith("/") else "/" + path
 
 
 def _find_method(section: list[Tag]) -> str:
@@ -336,7 +370,8 @@ def build_spec(all_endpoints: list[dict[str, Any]]) -> dict[str, Any]:
             "description": (
                 "AUTO-GENERATED candidate spec scraped from developer.samsclub.com. "
                 "Do not edit by hand and do not load at runtime. Used only for doc-drift "
-                "review; port real changes into specs/samsclub/sponsored.openapi.json."
+                "review; port real changes into "
+                "src/mcp_walmart_ads/specs/samsclub/ads/sponsored-products.openapi.json."
             ),
             "version": "candidate",
         },

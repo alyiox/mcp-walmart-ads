@@ -19,6 +19,10 @@ Specs reach us two ways, which is what :data:`SpecSource` distinguishes:
   reference page hydrates its HTML with the registry UUIDs of its documents, and
   ``https://dash.readme.com/api/v1/api-registry/<uuid>`` serves the full spec
   without authentication. This covers Walmart Connect and all of Marketplace.
+  The opaque UUID is unavoidable: that same HTML advertises readable
+  ``/branches/1.0/apis/<name>.json`` URLs, but they are client-side routes --
+  fetching two different ones returns the identical 2.4 MB page shell, not a
+  spec.
 * :class:`UrlSource` -- Sam's Club publishes neither files nor a registry, so its
   spec is hand-authored from the developer docs and refreshed from the raw URL of
   the committed file. That lets hand corrections ship without a release. ``auth``

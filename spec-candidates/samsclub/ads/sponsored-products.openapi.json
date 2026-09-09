@@ -1,6 +1,6 @@
 {
   "info": {
-    "description": "AUTO-GENERATED candidate spec scraped from developer.samsclub.com. Do not edit by hand and do not load at runtime. Used only for doc-drift review; port real changes into sponsored-ads.openapi.json.",
+    "description": "AUTO-GENERATED candidate spec scraped from developer.samsclub.com. Do not edit by hand and do not load at runtime. Used only for doc-drift review; port real changes into src/mcp_walmart_ads/specs/samsclub/ads/sponsored-products.openapi.json.",
     "title": "Sam's Club Sponsored Ads API (candidate)",
     "version": "candidate"
   },
@@ -491,6 +491,82 @@
           }
         },
         "summary": "Used to add new ad item to the ad group in a campaign.",
+        "tags": [
+          "Ad Items"
+        ]
+      },
+      "put": {
+        "operationId": "PUT /api/v1/adItems",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "adGroupId": {
+                    "description": "ID of the ad group that is part of the campaign",
+                    "type": "integer"
+                  },
+                  "bid": {
+                    "description": "Maximum cost per click for the item in an auto bidding campaign.Note: Bids on keywords in keyword-bid campaign supersede the item bid you set for items in keyword-bid campaign",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "campaignId": {
+                    "description": "ID of the campaign where the ad group belongs",
+                    "type": "integer"
+                  },
+                  "itemId": {
+                    "description": "ID of the product that is being added to ad group",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Status of ad item",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "campaignId",
+                  "adGroupId",
+                  "itemId",
+                  "bid",
+                  "status"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "adItemId": {
+                        "description": "ID of the ad item",
+                        "type": "integer"
+                      },
+                      "code": {
+                        "description": "The response code can have following values: success or failure",
+                        "type": "string"
+                      },
+                      "details": {
+                        "description": "Details of the error if response is failure",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Update an existing ad item in an ad group using PUT operation.",
         "tags": [
           "Ad Items"
         ]
@@ -2942,6 +3018,60 @@
         ]
       }
     },
+    "/api/v1/snapshot/entity": {
+      "post": {
+        "operationId": "POST /api/v1/snapshot/entity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "advertiserId": {
+                    "description": "The ID of the advertiser",
+                    "type": "integer"
+                  },
+                  "entityStatus": {
+                    "description": "The status of the entity Note: The default status is “enabled”. Disabled entities won’t be part of the snapshot unless you request “disabled” and/or “all”",
+                    "type": "string"
+                  },
+                  "entityTypes": {
+                    "description": "The type of entity for which the snapshot should be generated.",
+                    "type": "string"
+                  },
+                  "format": {
+                    "description": "Choose the format type for snapshot",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "advertiserId",
+                  "entityStatus",
+                  "entityTypes"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Create file-based snapshot for all the campaign entities for an advertiser.",
+        "tags": [
+          "Entity Snapshot"
+        ]
+      }
+    },
     "/api/v1/snapshot/report": {
       "post": {
         "operationId": "POST /api/v1/snapshot/report",
@@ -3524,138 +3654,6 @@
         "summary": "You can request a snapshot file for all performance reporting data available (until the date before current date) for a given advertiser using this method.",
         "tags": [
           "Snapshot Reports v2"
-        ]
-      }
-    },
-    "api/v1/adItems": {
-      "put": {
-        "operationId": "PUT api/v1/adItems",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "adGroupId": {
-                    "description": "ID of the ad group that is part of the campaign",
-                    "type": "integer"
-                  },
-                  "bid": {
-                    "description": "Maximum cost per click for the item in an auto bidding campaign.Note: Bids on keywords in keyword-bid campaign supersede the item bid you set for items in keyword-bid campaign",
-                    "format": "double",
-                    "type": "number"
-                  },
-                  "campaignId": {
-                    "description": "ID of the campaign where the ad group belongs",
-                    "type": "integer"
-                  },
-                  "itemId": {
-                    "description": "ID of the product that is being added to ad group",
-                    "type": "string"
-                  },
-                  "status": {
-                    "description": "Status of ad item",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "campaignId",
-                  "adGroupId",
-                  "itemId",
-                  "bid",
-                  "status"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "properties": {
-                      "adItemId": {
-                        "description": "ID of the ad item",
-                        "type": "integer"
-                      },
-                      "code": {
-                        "description": "The response code can have following values: success or failure",
-                        "type": "string"
-                      },
-                      "details": {
-                        "description": "Details of the error if response is failure",
-                        "type": "string"
-                      }
-                    },
-                    "type": "object"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Success"
-          }
-        },
-        "summary": "Update an existing ad item in an ad group using PUT operation.",
-        "tags": [
-          "Ad Items"
-        ]
-      }
-    },
-    "api/v1/snapshot/entity": {
-      "post": {
-        "operationId": "POST api/v1/snapshot/entity",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "advertiserId": {
-                    "description": "The ID of the advertiser",
-                    "type": "integer"
-                  },
-                  "entityStatus": {
-                    "description": "The status of the entity Note: The default status is “enabled”. Disabled entities won’t be part of the snapshot unless you request “disabled” and/or “all”",
-                    "type": "string"
-                  },
-                  "entityTypes": {
-                    "description": "The type of entity for which the snapshot should be generated.",
-                    "type": "string"
-                  },
-                  "format": {
-                    "description": "Choose the format type for snapshot",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "advertiserId",
-                  "entityStatus",
-                  "entityTypes"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success"
-          }
-        },
-        "summary": "Create file-based snapshot for all the campaign entities for an advertiser.",
-        "tags": [
-          "Entity Snapshot"
         ]
       }
     }
