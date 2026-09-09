@@ -144,7 +144,6 @@ def requires_partner_id(operation: Operation | None) -> str | None:
 async def auth_headers(
     cfg: EnvConfig,
     *,
-    api: str,
     operation: Operation | None = None,
     tokens: TokenManager | None = None,
     advertiser_id: int | None = None,
@@ -319,7 +318,6 @@ async def execute_request(
     async def attempt(force_refresh: bool) -> tuple[httpx.Response, dict[str, str]]:
         headers = await auth_headers(
             cfg,
-            api=api,
             operation=operation,
             tokens=tokens,
             advertiser_id=advertiser_id,
@@ -406,7 +404,6 @@ async def download(
 
     init_headers = await auth_headers(
         cfg,
-        api=api or "",
         operation=operation,
         tokens=tokens,
         advertiser_id=advertiser_id,

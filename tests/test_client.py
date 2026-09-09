@@ -131,7 +131,7 @@ async def test_an_operation_requiring_partner_id_fails_when_the_seller_has_none(
 
 @pytest.mark.asyncio
 async def test_signature_platform_sends_the_signature_set_and_bearer(signature_env: SignatureEnv):
-    headers = await client.auth_headers(signature_env, api="walmart:ads:sponsored-products")
+    headers = await client.auth_headers(signature_env)
     assert headers["WM_CONSUMER.ID"] == "connect-consumer"
     assert headers["Authorization"] == "Bearer connect-bearer"
     assert headers["WM_SEC.KEY_VERSION"] == "1"
@@ -144,24 +144,22 @@ async def test_signature_platform_sends_the_signature_set_and_bearer(signature_e
 async def test_advertiser_and_tenant_are_headers_on_a_signature_platform(
     signature_env: SignatureEnv,
 ):
-    headers = await client.auth_headers(
-        signature_env, api="walmart:ads:display", advertiser_id=99, tenant="WMT_CA"
-    )
+    headers = await client.auth_headers(signature_env, advertiser_id=99, tenant="WMT_CA")
     assert headers["X-Advertiser-ID"] == "99"
     assert headers["wap-tenant-id"] == "WMT_CA"
 
 
 @pytest.mark.asyncio
 async def test_advertiser_and_tenant_are_omitted_by_default(signature_env: SignatureEnv):
-    headers = await client.auth_headers(signature_env, api="walmart:ads:sponsored-products")
+    headers = await client.auth_headers(signature_env)
     assert "X-Advertiser-ID" not in headers
     assert "wap-tenant-id" not in headers
 
 
 @pytest.mark.asyncio
 async def test_correlation_id_is_always_present_and_unique(signature_env: SignatureEnv):
-    first = await client.auth_headers(signature_env, api="walmart:ads:sponsored-products")
-    second = await client.auth_headers(signature_env, api="walmart:ads:sponsored-products")
+    first = await client.auth_headers(signature_env)
+    second = await client.auth_headers(signature_env)
     assert first["WM_QOS.CORRELATION_ID"] != second["WM_QOS.CORRELATION_ID"]
 
 
@@ -172,7 +170,6 @@ async def test_oauth2_platform_sends_the_access_token_not_a_client_secret(
     _transport(monkeypatch, _ok())
     headers = await client.auth_headers(
         oauth2_env,
-        api="walmart:marketplace:order-management",
         tokens=TokenManager(),
         advertiser_id=7060158,
     )
@@ -197,7 +194,6 @@ async def test_market_and_global_version_come_from_the_operation(
     )
     headers = await client.auth_headers(
         oauth2_env,
-        api=op.api,
         operation=op,
         tokens=TokenManager(),
         advertiser_id=7060158,
@@ -213,7 +209,6 @@ async def test_global_version_is_omitted_when_the_operation_does_not_declare_it(
     _transport(monkeypatch, _ok())
     headers = await client.auth_headers(
         oauth2_env,
-        api="walmart:marketplace:order-management",
         operation=_operation({}),
         tokens=TokenManager(),
         advertiser_id=7060158,
@@ -229,7 +224,6 @@ async def test_partner_id_is_sent_when_the_seller_has_one(
     _transport(monkeypatch, _ok())
     headers = await client.auth_headers(
         oauth2_env,
-        api="walmart:marketplace:payments",
         tokens=TokenManager(),
         advertiser_id=7060158,
     )
@@ -251,7 +245,6 @@ async def test_sandbox_header_is_sent_on_the_sandbox_environment(
     )
     headers = await client.auth_headers(
         env,
-        api="walmart:marketplace:order-management",
         tokens=TokenManager(),
         advertiser_id=7060158,
     )
@@ -261,9 +254,7 @@ async def test_sandbox_header_is_sent_on_the_sandbox_environment(
 @pytest.mark.asyncio
 async def test_an_oauth2_platform_without_an_advertiser_id_is_an_error(oauth2_env: OAuth2Env):
     with pytest.raises(RequestError) as excinfo:
-        await client.auth_headers(
-            oauth2_env, api="walmart:marketplace:order-management", tokens=TokenManager()
-        )
+        await client.auth_headers(oauth2_env, tokens=TokenManager())
     assert "advertiser_id" in str(excinfo.value)
 
 

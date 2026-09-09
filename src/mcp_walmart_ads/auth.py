@@ -92,9 +92,8 @@ def token_url(platform: str, environment: str) -> str:
     """Token endpoint for a platform's environment.
 
     Always the bare environment host -- the ``/v1`` suffix that
-    ``walmart:marketplace:simulations-api`` declares applies to its own operations,
-    not
-    to auth.
+    ``walmart:marketplace:simulations-api`` declares applies to its own
+    operations, not to auth.
     """
     base_urls = platform_for(platform).base_urls
     if base_urls is None or environment not in base_urls:
@@ -201,8 +200,3 @@ class TokenManager:
             token = await fetch_token(credential, platform, environment)
             self._tokens[key] = token
             return token.access_token
-
-    def invalidate(
-        self, credential: Credential, *, platform: str, region: str, environment: str
-    ) -> None:
-        self._tokens.pop((platform, region.casefold(), environment, credential.client_id), None)

@@ -6,11 +6,9 @@ from mcp_walmart_ads.platforms import (
     OAUTH2,
     PLATFORM_IDS,
     PLATFORMS,
-    RETAILERS,
     SIGNATURE,
     UnknownPlatform,
     platform_for,
-    platform_for_api,
     platform_of,
 )
 
@@ -56,20 +54,6 @@ def test_platform_of_takes_the_first_two_segments():
 def test_platform_of_is_purely_structural():
     # It does not validate; resolution is platform_for's job.
     assert platform_of("nope:nope:nope") == "nope:nope"
-
-
-def test_platform_for_api_resolves_through_the_prefix():
-    assert platform_for_api("walmart:marketplace:order-management").auth == OAUTH2
-    assert platform_for_api("samsclub:ads:sponsored-products").auth == SIGNATURE
-
-
-def test_platform_for_api_rejects_an_unknown_prefix():
-    with pytest.raises(UnknownPlatform):
-        platform_for_api("target:ads:sponsored-products")
-
-
-def test_retailers_are_deduplicated_in_declaration_order():
-    assert RETAILERS == ("walmart", "samsclub")
 
 
 def test_every_platform_id_is_its_two_segments():

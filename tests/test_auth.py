@@ -268,22 +268,3 @@ async def test_concurrent_callers_fetch_the_token_once(
         ]
     )
     assert len(calls) == 1
-
-
-@pytest.mark.asyncio
-async def test_invalidate_forces_the_next_call_to_refetch(
-    credential: Credential, monkeypatch: pytest.MonkeyPatch
-):
-    calls: list[httpx.Request] = []
-    _patch_transport(monkeypatch, _token_response(calls))
-    manager = TokenManager()
-    await manager.access_token(
-        credential, platform="walmart:marketplace", region="us", environment="production"
-    )
-    manager.invalidate(
-        credential, platform="walmart:marketplace", region="US", environment="production"
-    )
-    await manager.access_token(
-        credential, platform="walmart:marketplace", region="us", environment="production"
-    )
-    assert len(calls) == 2

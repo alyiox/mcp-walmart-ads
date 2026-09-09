@@ -65,7 +65,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from .platforms import OAUTH2, PLATFORM_IDS, platform_for
-from .specs import API_IDS, SPECS
+from .specs import SPEC_IDS, SPECS
 
 CONFIG_DIR = Path.home() / ".config" / "mcp-walmart-ads"
 CONFIG_PATH = CONFIG_DIR / "config.json"
@@ -131,10 +131,6 @@ class Credential:
     client_id: str
     client_secret: str
     advertisers: tuple[Advertiser, ...]
-
-    @property
-    def advertiser_ids(self) -> tuple[int, ...]:
-        return tuple(a.id for a in self.advertisers)
 
 
 @dataclass(frozen=True)
@@ -488,7 +484,7 @@ def _load_signature_env(
         else:
             for key, value in raw_base_urls.items():
                 api = _normalize_api_key(str(key), platform)
-                if api not in API_IDS and api not in {m.spec_id for m in SPECS}:
+                if api not in SPEC_IDS:
                     local.append(f"{where}.base_urls.{key}: unknown api for platform {platform!r}")
                     continue
                 if not isinstance(value, str) or not value:

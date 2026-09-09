@@ -126,9 +126,8 @@ class Operation:
         return None
 
 
-# api -> (mtime, {operation_id: Operation})
-_index_cache: dict[str, tuple[float, dict[str, Operation]]] = {}
-_spec_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+# api -> (mtime, spec, {operation_id: Operation})
+_cache: dict[str, tuple[float, dict[str, Any], dict[str, Operation]]] = {}
 
 
 def _load_cached(api: str) -> tuple[dict[str, Any], dict[str, Operation]]:
@@ -136,15 +135,9 @@ def _load_cached(api: str) -> tuple[dict[str, Any], dict[str, Operation]]:
     path = spec_path(api)
     mtime = path.stat().st_mtime
 
-    cached_spec = _spec_cache.get(api)
-    cached_index = _index_cache.get(api)
-    if (
-        cached_spec is not None
-        and cached_index is not None
-        and cached_spec[0] == mtime
-        and cached_index[0] == mtime
-    ):
-        return cached_spec[1], cached_index[1]
+    cached = _cache.get(api)
+    if cached is not None and cached[0] == mtime:
+        return cached[1], cached[2]
 
     spec = load_spec(api)
     ops: dict[str, Operation] = {}
@@ -171,8 +164,7 @@ def _load_cached(api: str) -> tuple[dict[str, Any], dict[str, Operation]]:
                 raw=raw,
             )
 
-    _spec_cache[api] = (mtime, spec)
-    _index_cache[api] = (mtime, ops)
+    _cache[api] = (mtime, spec, ops)
     return spec, ops
 
 

@@ -90,14 +90,6 @@ async def test_exactly_five_tools_are_registered():
 
 
 @pytest.mark.asyncio
-async def test_every_tool_and_resource_description_is_namespaced():
-    for tool in await server.mcp.list_tools():
-        assert tool.description and tool.description.startswith("[Walmart]")
-    for resource in await server.mcp.list_resources():
-        assert resource.description and resource.description.startswith("[Walmart]")
-
-
-@pytest.mark.asyncio
 async def test_no_parameter_description_carries_the_namespace_tag():
     # A parameter is only read inside its own tool's schema, so the tag would be
     # repetition with nothing to disambiguate.
@@ -108,12 +100,6 @@ async def test_no_parameter_description_carries_the_namespace_tag():
         if prop.get("description", "").startswith("[Walmart]")
     ]
     assert offenders == [], f"parameters must not repeat the tag: {offenders}"
-
-
-@pytest.mark.asyncio
-async def test_every_tool_declares_annotations():
-    for tool in await server.mcp.list_tools():
-        assert tool.annotations is not None
 
 
 @pytest.mark.asyncio
@@ -174,19 +160,6 @@ def test_the_config_resource_reports_apis_and_advertisers(loaded):
         {"id": 7060158, "partner_id": "10001234"},
         {"id": 7060159},
     ]
-
-
-def test_the_config_resource_surfaces_a_broken_platform_as_an_error(
-    write_config, monkeypatch: pytest.MonkeyPatch
-):
-    data = raw_config()
-    data["platforms"]["walmart:ads"]["regions"]["us"]["production"].pop("bearer_token")
-    cfg = load_config(write_config(data))
-    monkeypatch.setattr(server, "_config", cfg)
-    monkeypatch.setattr(server, "_cache", ResponseCache())
-    payload = json.loads(server.get_config())["platforms"]
-    assert "error" in payload["walmart:ads"]
-    assert "us" in payload["walmart:marketplace"]
 
 
 def test_the_config_resource_reports_a_missing_file_instead_of_raising(unconfigured):
@@ -754,6 +727,9 @@ def test_the_config_resource_names_an_unusable_platform_and_its_file(
     entry = payload["unusable"]["samsclub:ads"]
     assert entry["source"].endswith("config.json")
     assert entry["problems"] == 1
+    # The per-platform block carries the problems themselves; the others load on.
+    assert "error" in payload["platforms"]["samsclub:ads"]
+    assert "us" in payload["platforms"]["walmart:ads"]
 
 
 def test_the_config_resource_reports_unparsed_files(

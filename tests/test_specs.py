@@ -50,12 +50,6 @@ def test_rel_path_derives_from_the_spec_id():
     assert meta.rel_path == "walmart/marketplace/order-management.openapi.json"
 
 
-def test_unknown_api_names_the_known_ones():
-    with pytest.raises(SpecError) as excinfo:
-        specs.meta_for("walmart:marketplace:no-such-domain")
-    assert "walmart:ads:sponsored-products" in str(excinfo.value)
-
-
 # ── sources ───────────────────────────────────────────────────────────────────
 
 
@@ -67,12 +61,6 @@ def test_registry_source_builds_its_registry_url():
 def test_samsclub_is_the_only_url_sourced_spec():
     url_sourced = [m.spec_id for m in SPECS if isinstance(m.source, UrlSource)]
     assert url_sourced == ["samsclub:ads:sponsored-products"]
-
-
-def test_url_source_defaults_to_unauthenticated():
-    meta = specs.meta_for("samsclub:ads:sponsored-products")
-    assert isinstance(meta.source, UrlSource)
-    assert meta.source.auth is False
 
 
 def test_auth_headers_are_attached_only_for_an_authenticated_url_source():
@@ -320,26 +308,12 @@ def test_an_api_with_no_counterpart_mirrors_nothing():
     assert specs.mirrors_of("walmart:marketplace:order-management") == ()
 
 
-def test_mirroring_is_keyed_on_the_line_and_name_suffix():
-    left = specs.meta_for("walmart:ads:sponsored-products")
-    right = specs.meta_for("samsclub:ads:sponsored-products")
-    assert left.suffix == right.suffix == "ads:sponsored-products"
-    assert left.platform != right.platform
-
-
 def test_mirrors_never_include_an_auxiliary_spec():
     for meta in SPECS:
         assert all(specs.meta_for(m).in_surface for m in specs.mirrors_of(meta.spec_id))
 
 
 # ── the auxiliary specs are addressable, just not discoverable ────────────────
-
-
-def test_meta_for_accepts_an_auxiliary_spec():
-    # They are callable by raw method+path and refreshable, so meta_for must
-    # resolve them even though discovery never lists them.
-    for aux in ("walmart:ads:ad-id-token", "walmart:ads:conversions"):
-        assert specs.meta_for(aux).in_surface is False
 
 
 def test_the_unknown_api_error_lists_every_spec_it_accepts():

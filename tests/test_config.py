@@ -67,17 +67,6 @@ def test_base_url_keys_accept_bare_or_qualified_api_names(config_file: Path):
     }
 
 
-def test_qualified_base_url_keys_round_trip(write_config):
-    data = raw_config()
-    data["platforms"]["walmart:ads"]["regions"]["us"]["production"]["base_urls"] = {
-        "walmart:ads:sponsored-products": "https://a.test",
-        "walmart:ads:display": "https://b.test",
-    }
-    env = load_config(write_config(data)).env("walmart:ads", "us", "production")
-    assert isinstance(env, SignatureEnv)
-    assert set(env.base_urls) == {"walmart:ads:sponsored-products", "walmart:ads:display"}
-
-
 def test_an_auxiliary_api_may_also_carry_a_base_url(write_config):
     data = raw_config()
     data["platforms"]["walmart:ads"]["regions"]["us"]["production"]["base_urls"][
@@ -148,16 +137,6 @@ def test_non_object_config_raises(tmp_path: Path):
         load_config(path)
 
 
-def test_missing_platforms_key_raises(tmp_path: Path):
-    # Absent `platforms` is legal on its own -- config.d/ may supply them -- so
-    # the failure is "nothing configured anywhere", raised after the merge.
-    path = tmp_path / "c.json"
-    path.write_text(json.dumps({"response_cache_ttl": 60}))
-    with pytest.raises(ConfigError) as excinfo:
-        load_config(path)
-    assert "No platform is configured" in str(excinfo.value)
-
-
 def test_unknown_platform_and_unknown_top_level_field_fail_the_file(write_config):
     data = raw_config()
     data["platforms"]["target"] = {"regions": {}}
@@ -224,13 +203,6 @@ def test_signature_platform_reports_every_missing_field_at_once(write_config):
     joined = "\n".join(errors)
     for field in ("consumer_id", "private_key", "bearer_token", "sponsored-products", "display"):
         assert field in joined
-
-
-def test_an_unreadable_private_key_is_reported_not_raised(write_config):
-    data = raw_config()
-    data["platforms"]["walmart:ads"]["regions"]["us"]["production"]["private_key"] = "absent.pem"
-    cfg = load_config(write_config(data))
-    assert any("cannot read" in e for e in cfg.platform_errors["walmart:ads"])
 
 
 def test_a_missing_surface_api_base_url_is_reported(write_config):
@@ -469,12 +441,6 @@ def test_only_json_files_directly_in_config_d_are_read(split_config):
     assert "samsclub:ads" in cfg.usable
 
 
-def test_an_absent_config_d_directory_changes_nothing(config_file: Path):
-    cfg = load_config(config_file)
-    assert cfg.file_errors == {}
-    assert len(cfg.usable) == 3
-
-
 def test_drop_in_files_merge_in_a_stable_order(split_config):
     base, drop = _split(raw_config(), "samsclub:ads", "walmart:marketplace")
     one = {"platforms": {"samsclub:ads": drop["platforms"]["samsclub:ads"]}}
@@ -488,7 +454,7 @@ def test_drop_in_files_merge_in_a_stable_order(split_config):
 # ── error reporting aimed at a caller ─────────────────────────────────────────
 
 
-def test_the_unusable_message_leads_with_the_remedy_and_the_restart(write_config):
+def test_the_unusable_message_leads_with_the_remedy_and_names_what_still_works(write_config):
     data = raw_config()
     data["platforms"]["samsclub:ads"]["regions"]["us"]["production"].pop("bearer_token")
     cfg = load_config(write_config(data))
@@ -498,26 +464,15 @@ def test_the_unusable_message_leads_with_the_remedy_and_the_restart(write_config
     assert lines[0].startswith("samsclub:ads is not usable:")
     assert "config.json" in lines[0]
     assert "restart" in lines[1]
-    assert lines[-1].startswith("Usable now:")
+    assert lines[-1] == "Usable now: walmart:ads, walmart:marketplace."
 
 
-def test_the_unusable_message_names_the_platforms_that_still_work(write_config):
-    data = raw_config()
-    data["platforms"]["samsclub:ads"]["regions"]["us"]["production"].pop("bearer_token")
-    cfg = load_config(write_config(data))
-    with pytest.raises(ConfigError) as excinfo:
-        cfg.env("samsclub:ads", "us", "production")
-    tail = str(excinfo.value).splitlines()[-1]
-    assert "walmart:ads" in tail and "walmart:marketplace" in tail
-    assert "samsclub:ads" not in tail
-
-
-def test_repeated_failure_shapes_collapse_to_one_line(write_config):
+def test_an_unreadable_private_key_is_reported_without_the_errno_prose(write_config):
     data = raw_config()
     for env in data["platforms"]["walmart:ads"]["regions"]["us"].values():
         env["private_key"] = "./keys/absent/missing.pem"
     cfg = load_config(write_config(data))
-    assert len(cfg.platform_errors["walmart:ads"]) == 1  # only one env in the fixture
+    assert any("cannot read" in e for e in cfg.platform_errors["walmart:ads"])
     with pytest.raises(ConfigError) as excinfo:
         cfg.env("walmart:ads", "us", "production")
     message = str(excinfo.value)

@@ -41,7 +41,6 @@ class Platform:
 
     retailer: str
     line: str
-    title: str
     auth: str
     environments: tuple[str, ...] | None = None
     base_urls: dict[str, str] | None = None
@@ -58,11 +57,10 @@ class Platform:
 
 
 PLATFORMS: tuple[Platform, ...] = (
-    Platform("walmart", "ads", "Walmart Connect Ads", SIGNATURE),
+    Platform("walmart", "ads", SIGNATURE),
     Platform(
         "walmart",
         "marketplace",
-        "Walmart Marketplace",
         OAUTH2,
         environments=("production", "sandbox"),
         base_urls={
@@ -70,12 +68,10 @@ PLATFORMS: tuple[Platform, ...] = (
             "sandbox": MARKETPLACE_SANDBOX_BASE_URL,
         },
     ),
-    Platform("samsclub", "ads", "Sam's Club Sponsored Ads", SIGNATURE),
+    Platform("samsclub", "ads", SIGNATURE),
 )
 
 PLATFORM_IDS: tuple[str, ...] = tuple(p.id for p in PLATFORMS)
-
-RETAILERS: tuple[str, ...] = tuple(dict.fromkeys(p.retailer for p in PLATFORMS))
 
 _BY_ID: dict[str, Platform] = {p.id: p for p in PLATFORMS}
 
@@ -99,8 +95,3 @@ def platform_for(platform_id: str) -> Platform:
             f"unknown platform {platform_id!r} (known: {', '.join(PLATFORM_IDS)})"
         )
     return platform
-
-
-def platform_for_api(api: str) -> Platform:
-    """The platform owning ``api``, raising :class:`UnknownPlatform` if there is none."""
-    return platform_for(platform_of(api))

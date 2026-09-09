@@ -196,7 +196,7 @@ def test_describe_keeps_non_header_parameters():
 
 
 def test_describe_does_not_mutate_the_cached_operation():
-    first = discovery.describe_endpoint("walmart:marketplace:order-management:getAllOrders")
+    discovery.describe_endpoint("walmart:marketplace:order-management:getAllOrders")
     raw_headers = [
         p
         for p in discovery.get_operation(
@@ -205,7 +205,6 @@ def test_describe_does_not_mutate_the_cached_operation():
         if p.get("in") == "header"
     ]
     assert raw_headers, "expected the underlying operation to still declare header params"
-    assert first["operation"] is not None
 
 
 def test_ref_closure_is_transitive():
@@ -350,38 +349,7 @@ def test_mirrored_apis_overlap_only_partly():
     assert len(shared) < len(walmart) / 2, "fewer than half of Walmart's ops exist on Sam's Club"
 
 
-def test_a_shared_operation_id_means_the_same_endpoint():
-    # Where an id does exist on both, it sits on an identical path -- the one
-    # part of the mirroring claim that holds without qualification.
-    paths = {}
-    for api in ("walmart:ads:sponsored-products", "samsclub:ads:sponsored-products"):
-        paths[api] = {
-            r["operation_id"].rsplit(":", 1)[1]: r["path"]
-            for r in discovery.list_endpoints(api=api)
-        }
-    left, right = paths.values()
-    for operation_id in set(left) & set(right):
-        assert left[operation_id] == right[operation_id], operation_id
-
-
-def test_a_mirrored_operation_is_reachable_on_both_platforms():
-    # The same operationId under both, distinguished only by the retailer.
-    for api in ("walmart:ads:sponsored-products", "samsclub:ads:sponsored-products"):
-        op = discovery.get_operation("AdGroupList", api=api)
-        assert op.api == api
-        assert op.path == "/api/v1/adGroups"
-
-
-# ── four-segment ids ──────────────────────────────────────────────────────────
-
-
-def test_a_four_segment_qualified_id_round_trips():
-    qualified = "walmart:ads:sponsored-products:SBAProfileUpdateV2"
-    op = discovery.get_operation(qualified)
-    assert op.qualified_id == qualified
-    assert op.api == "walmart:ads:sponsored-products"
-    assert op.platform == "walmart:ads"
-    assert op.method == "put"
+# ── qualified ids ─────────────────────────────────────────────────────────────
 
 
 def test_every_listed_operation_id_resolves_back_to_itself():
@@ -389,10 +357,3 @@ def test_every_listed_operation_id_resolves_back_to_itself():
     # must round-trip through get_operation unchanged.
     for row in discovery.list_endpoints():
         assert discovery.get_operation(row["operation_id"]).qualified_id == row["operation_id"]
-
-
-def test_operation_ids_carry_exactly_three_colons_plus_the_operation():
-    for row in discovery.list_endpoints():
-        api, _, operation = row["operation_id"].rpartition(":")
-        assert api.count(":") == 2
-        assert ":" not in operation

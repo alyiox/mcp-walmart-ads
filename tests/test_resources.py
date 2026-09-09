@@ -26,15 +26,6 @@ def test_cache_missing_key() -> None:
     assert cache.get("nonexistent") is None
 
 
-def test_cache_list_ids() -> None:
-    cache = ResponseCache(ttl_seconds=60)
-    cache.put("a", 1)
-    cache.put("b", 2)
-    ids = cache.list_ids()
-    assert "a" in ids
-    assert "b" in ids
-
-
 def test_read_cached_response_json() -> None:
     cache = ResponseCache()
     cache.put("req-x", [{"id": 1}, {"id": 2}])

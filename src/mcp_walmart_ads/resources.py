@@ -23,13 +23,6 @@ class ResponseCache:
             return None
         return data
 
-    def list_ids(self) -> list[str]:
-        now = time.monotonic()
-        expired = [k for k, (_, ts) in self._store.items() if now - ts > self._ttl]
-        for k in expired:
-            del self._store[k]
-        return list(self._store.keys())
-
 
 def read_cached_response(request_id: str, cache: ResponseCache) -> str | None:
     """Return the cached body as text, or ``None`` if missing/expired.
