@@ -107,7 +107,7 @@ def test_absolute_private_key_path_is_used_as_given(write_config, key_file: Path
 
 
 def test_thresholds_default_and_override(write_config):
-    assert load_config(write_config(raw_config())).truncate_threshold == 1024
+    assert load_config(write_config(raw_config())).truncate_threshold == 2048
     data = raw_config() | {"truncate_threshold": 4096, "response_cache_ttl": 60}
     cfg = load_config(write_config(data))
     assert (cfg.truncate_threshold, cfg.response_cache_ttl) == (4096, 60)

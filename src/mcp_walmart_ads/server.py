@@ -66,7 +66,7 @@ HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 
 # Above this, describe_endpoint hands back the operation without its response
 # schemas and parks the whole payload at wmt://responses/{operation_id}. It is
-# not truncate_threshold: that is 1 KB by default, below the median describe.
+# not truncate_threshold: that is 2 KB by default, below the median describe.
 DESCRIBE_THRESHOLD = 20 * 1024
 
 tokens = TokenManager()

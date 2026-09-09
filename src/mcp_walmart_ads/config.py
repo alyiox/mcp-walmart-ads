@@ -686,7 +686,7 @@ def load_config(path: Path | None = None) -> Config:
         )
 
     ttl = _positive_int(raw, "response_cache_ttl", 3600, top_errors)
-    threshold = _positive_int(raw, "truncate_threshold", 1024, top_errors)
+    threshold = _positive_int(raw, "truncate_threshold", 2048, top_errors)
 
     unknown = set(raw) - {"platforms", "response_cache_ttl", "truncate_threshold"}
     if unknown:

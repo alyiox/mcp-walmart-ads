@@ -222,7 +222,7 @@ fix needs a restart.
 | Field | Default | Notes |
 |---|---|---|
 | `response_cache_ttl` | `3600` | Seconds a truncated body or download stays readable at its resource URI |
-| `truncate_threshold` | `1024` | Response bytes returned inline before truncating to a preview |
+| `truncate_threshold` | `2048` | Response bytes returned inline before truncating to a preview |
 
 ### Market → tenant (`wap-tenant-id`)
 
