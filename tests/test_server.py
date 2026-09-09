@@ -8,6 +8,7 @@ from typing import Any, get_args
 
 import httpx
 import pytest
+from mcp.server.mcpserver.exceptions import ResourceError, ResourceNotFoundError
 
 from mcp_walmart_ads import server
 from mcp_walmart_ads.config import load_config
@@ -135,49 +136,130 @@ async def test_writing_tools_are_idempotent_and_non_destructive():
 
 
 @pytest.mark.asyncio
-async def test_the_four_resources_are_registered():
+async def test_the_resource_surface_is_platform_rooted():
     uris = {str(r.uri) for r in await server.mcp.list_resources()}
     templates = {str(t.uri_template) for t in await server.mcp.list_resource_templates()}
-    assert uris == {"wmt://config", "wmt://apis"}
-    assert templates == {"wmt://responses/{request_id}", "wmt://curl/{request_id}"}
+    assert uris == {"wmt://platforms"}
+    assert templates == {
+        "wmt://platforms/{platform}/apis",
+        "wmt://platforms/{platform}/apis/{name}",
+        "wmt://platforms/{platform}/regions/{region}/{environment}/advertisers",
+        "wmt://platforms/{platform}/regions/{region}/{environment}/hosts",
+        "wmt://responses/{request_id}",
+        "wmt://curl/{request_id}",
+    }
+
+
+@pytest.mark.asyncio
+async def test_every_resource_is_named_for_what_it_returns():
+    # A name is the URI's last concrete segment, singular when the URI
+    # addresses one item -- never qualified by a parent segment.
+    named = {str(r.uri): r.name for r in await server.mcp.list_resources()}
+    named |= {str(t.uri_template): t.name for t in await server.mcp.list_resource_templates()}
+    assert named == {
+        "wmt://platforms": "platforms",
+        "wmt://platforms/{platform}/apis": "apis",
+        "wmt://platforms/{platform}/apis/{name}": "api",
+        "wmt://platforms/{platform}/regions/{region}/{environment}/advertisers": "advertisers",
+        "wmt://platforms/{platform}/regions/{region}/{environment}/hosts": "hosts",
+        "wmt://responses/{request_id}": "cached_response",
+        "wmt://curl/{request_id}": "cached_curl",
+    }
 
 
 # ── resources ─────────────────────────────────────────────────────────────────
 
 
-def test_the_config_resource_never_leaks_credential_material(loaded):
-    text = server.get_config()
+def test_no_resource_leaks_credential_material(loaded):
+    text = "".join(
+        (
+            server.get_platforms(),
+            server.get_apis("walmart:marketplace"),
+            server.get_api("walmart:ads", "display"),
+            server.get_advertisers("walmart:marketplace", "us", "production"),
+            server.get_hosts("walmart:ads", "us", "production"),
+        )
+    )
     for secret in ("secret-1", "connect-bearer", "sams-bearer", "BEGIN PRIVATE KEY"):
         assert secret not in text
 
 
-def test_the_config_resource_reports_apis_and_advertisers(loaded):
-    payload = json.loads(server.get_config())["platforms"]
-    assert payload["walmart:ads"]["us"]["production"] == {
-        "apis": ["walmart:ads:display", "walmart:ads:sponsored-products"]
-    }
-    assert payload["walmart:marketplace"]["us"]["production"]["advertisers"] == [
-        {"id": 7060158, "partner_id": "10001234"},
-        {"id": 7060159},
+def test_the_platforms_resource_reports_topology_and_auth(loaded):
+    payload = json.loads(server.get_platforms())
+    assert payload["walmart:ads"] == {"auth": "signature", "regions": {"us": ["production"]}}
+    assert payload["walmart:marketplace"]["auth"] == "oauth2"
+    assert payload["walmart:marketplace"]["regions"] == {"us": ["production", "sandbox"]}
+
+
+def test_no_payload_echoes_a_segment_of_its_own_uri(loaded):
+    for text in (
+        server.get_apis("walmart:ads"),
+        server.get_api("walmart:ads", "display"),
+        server.get_advertisers("walmart:marketplace", "us", "production"),
+        server.get_hosts("walmart:ads", "us", "production"),
+    ):
+        payload = json.loads(text)
+        keys = payload.keys() if isinstance(payload, dict) else ()
+        assert "platform" not in keys and "api" not in keys
+
+
+def test_a_missing_config_fails_the_read_on_the_wire(unconfigured):
+    with pytest.raises(ResourceError):
+        server.get_platforms()
+
+
+def test_the_apis_resource_lists_one_platform_as_bare_ids(loaded):
+    assert json.loads(server.get_apis("walmart:ads")) == [
+        "walmart:ads:sponsored-products",
+        "walmart:ads:display",
     ]
 
 
-def test_the_config_resource_reports_a_missing_file_instead_of_raising(unconfigured):
-    assert "error" in json.loads(server.get_config())
+def test_an_unknown_platform_is_a_wire_error(loaded):
+    with pytest.raises(ResourceNotFoundError):
+        server.get_apis("walmart:groceries")
 
 
-def test_the_apis_resource_lists_the_whole_namespace():
-    apis = json.loads(server.get_apis())["apis"]
-    assert len(apis) == 31
-    assert {a["platform"] for a in apis} == {"walmart:ads", "samsclub:ads", "walmart:marketplace"}
+def test_one_api_is_addressable_by_name_or_by_qualified_id(loaded):
+    by_name = json.loads(server.get_api("walmart:ads", "display"))
+    by_id = json.loads(server.get_api("walmart:ads", "walmart:ads:display"))
+    assert by_name == by_id
+    assert by_name["title"] and by_name["tags"]
+
+
+def test_the_advertisers_resource_maps_ids_to_partner_ids(loaded):
+    payload = json.loads(server.get_advertisers("walmart:marketplace", "us", "production"))
+    assert payload == {"7060158": "10001234", "7060159": None}
+
+
+def test_the_hosts_resource_maps_apis_to_base_urls(loaded):
+    payload = json.loads(server.get_hosts("walmart:ads", "us", "production"))
+    assert payload == {
+        "walmart:ads:sponsored-products": "https://advertising.walmart.com",
+        "walmart:ads:display": "https://api.dsp.walmart.com",
+    }
+
+
+def test_asking_an_environment_for_the_wrong_entity_names_the_right_one(loaded):
+    with pytest.raises(ResourceNotFoundError, match="hosts"):
+        server.get_advertisers("walmart:ads", "us", "production")
+    with pytest.raises(ResourceNotFoundError, match="advertisers"):
+        server.get_hosts("walmart:marketplace", "us", "production")
+
+
+def test_an_unconfigured_environment_is_a_wire_error_naming_what_exists(loaded):
+    with pytest.raises(ResourceNotFoundError, match="production"):
+        server.get_advertisers("walmart:marketplace", "us", "prod")
 
 
 def test_the_cached_response_resource_reports_an_unknown_id(loaded):
-    assert "No cached response" in server.cached_response_resource("nope")
+    with pytest.raises(ResourceNotFoundError):
+        server.get_cached_response("nope")
 
 
-def test_the_curl_resource_reports_an_unknown_id(loaded):
-    assert "No cURL command" in server.cached_curl_resource("nope")
+def test_the_cached_curl_resource_reports_an_unknown_id(loaded):
+    with pytest.raises(ResourceNotFoundError):
+        server.get_cached_curl("nope")
 
 
 # ── discovery tools ───────────────────────────────────────────────────────────
@@ -193,6 +275,67 @@ async def test_list_endpoints_works_with_no_config_at_all(unconfigured):
 async def test_describe_endpoint_works_with_no_config_at_all(unconfigured):
     described = await server.describe_endpoint("walmart:marketplace:order-management:getAllOrders")
     assert described["method"] == "GET"
+
+
+@pytest.mark.asyncio
+async def test_an_unfiltered_listing_answers_with_counts_not_rows():
+    # All 424 rows are 130 KB. An unfiltered call is what a caller makes before
+    # it knows how to narrow, so it gets the map of where the operations are.
+    result = await server.list_endpoints()
+    assert "endpoints" not in result
+    assert result["count"] == sum(result["by_api"].values())
+    assert result["by_api"]["walmart:ads:display"] == 87
+    assert "narrow" in result["hint"]
+
+
+@pytest.mark.asyncio
+async def test_a_filtered_listing_pages_and_says_where_it_stopped():
+    first = await server.list_endpoints(api="walmart:ads:display", limit=10)
+    assert first["count"] == 87
+    assert first["returned"] == 10
+    assert first["next_offset"] == 10
+
+    rest = await server.list_endpoints(api="walmart:ads:display", limit=500, offset=10)
+    assert rest["returned"] == 77
+    assert "next_offset" not in rest
+    assert first["endpoints"][0] != rest["endpoints"][0]
+
+
+@pytest.mark.asyncio
+async def test_an_oversized_description_defers_its_response_schemas(loaded):
+    described = await server.describe_endpoint(
+        "walmart:marketplace:order-management:refundOrderLines"
+    )
+    assert described["truncated"] is True
+    assert "responses" not in described["operation"]
+    # What a caller needs to build the request stays inline.
+    assert described["operation"]["requestBody"]
+    request_id = described["cached_at"].removeprefix("wmt://responses/")
+    full = json.loads(server.get_cached_response(request_id))
+    assert full["operation"]["responses"]
+
+
+@pytest.mark.asyncio
+async def test_a_small_description_is_returned_whole(loaded):
+    described = await server.describe_endpoint("walmart:marketplace:lag-time:getLagTime")
+    assert "truncated" not in described and "cached_at" not in described
+
+
+@pytest.mark.asyncio
+async def test_an_api_restricted_to_one_environment_is_refused_before_the_request(loaded):
+    result = await server.call_endpoint(
+        region="us",
+        environment="production",
+        operation_id="walmart:marketplace:simulations-api:createAnItem",
+    )
+    assert "sandbox only" in (result.error or "")
+
+    other_way = await server.call_endpoint(
+        region="us",
+        environment="sandbox",
+        operation_id="walmart:marketplace:recommendations-api:getRestockRecommendations",
+    )
+    assert "production only" in (other_way.error or "")
 
 
 @pytest.mark.asyncio
@@ -319,7 +462,7 @@ async def test_a_large_body_is_truncated_and_cached(loaded, monkeypatch: pytest.
     assert result.truncated is True
     assert result.cached_at is not None
     request_id = result.cached_at.removeprefix("wmt://responses/")
-    assert json.loads(server.cached_response_resource(request_id)) == payload
+    assert json.loads(server.get_cached_response(request_id)) == payload
 
 
 @pytest.mark.asyncio
@@ -335,7 +478,7 @@ async def test_a_small_body_is_returned_whole_with_a_curl_reference(
     assert result.body == {"ok": True}
     assert result.truncated is None
     assert result.curl is not None
-    curl = server.cached_curl_resource(result.curl.removeprefix("wmt://curl/"))
+    curl = server.get_cached_curl(result.curl.removeprefix("wmt://curl/"))
     assert "connect-bearer" not in curl
     assert "$WM_BEARER_TOKEN" in curl
 
@@ -394,7 +537,7 @@ async def test_a_download_without_dest_path_gunzips_into_the_cache(
     )
     assert result.cached_at is not None
     request_id = result.cached_at.removeprefix("wmt://responses/")
-    assert server.cached_response_resource(request_id) == "a,b\n1,2\n"
+    assert server.get_cached_response(request_id) == "a,b\n1,2\n"
 
 
 @pytest.mark.asyncio
@@ -411,7 +554,7 @@ async def test_an_uncompressed_payload_is_cached_verbatim(loaded, monkeypatch: p
     )
     assert result.cached_at is not None
     assert (
-        server.cached_response_resource(result.cached_at.removeprefix("wmt://responses/"))
+        server.get_cached_response(result.cached_at.removeprefix("wmt://responses/"))
         == "plain,text\n"
     )
 
@@ -575,12 +718,12 @@ async def test_platform_and_method_reach_the_schema_as_enums():
 @pytest.mark.asyncio
 async def test_api_is_deliberately_not_enumerated():
     # 31 values on four tools would cost ~1,270 tokens to duplicate what
-    # wmt://apis already returns; the Src: apis lineage tag carries it instead.
+    # wmt://platforms/{platform}/apis returns; the lineage tag carries it instead.
     tools = {t.name: t for t in await server.mcp.list_tools()}
     for tool in ("list_endpoints", "describe_endpoint", "call_endpoint", "refresh_specs"):
         prop = tools[tool].input_schema["properties"]["api"]
         assert "enum" not in json.dumps(prop)
-        assert "Src: apis" in prop["description"]
+        assert "Src: platforms." in prop["description"]
 
 
 @pytest.mark.asyncio
@@ -685,11 +828,11 @@ async def test_every_description_is_namespaced_and_non_empty():
 async def test_every_parameter_naming_a_configured_entity_declares_its_lineage():
     # AGENTS.md: parameters referring to entities this server owns carry Src:.
     expected = {
-        "region": "Src: config",
-        "environment": "Src: config",
-        "advertiser_id": "Src: config",
-        "api": "Src: apis",
-        "platform": "Src: apis",
+        "region": "Src: platforms",
+        "environment": "Src: platforms",
+        "advertiser_id": "Src: platforms",
+        "api": "Src: platforms",
+        "platform": "Src: platforms",
         "operation_id": "Src: operations",
     }
     for tool in await server.mcp.list_tools():
@@ -711,28 +854,23 @@ def _with_broken_samsclub(monkeypatch: pytest.MonkeyPatch, write_config) -> None
     monkeypatch.setattr(server, "_cache", ResponseCache())
 
 
-def test_the_config_resource_leads_with_what_is_usable(loaded):
-    payload = json.loads(server.get_config())
-    assert list(payload)[0] == "usable"
-    assert set(payload["usable"]) == {"walmart:ads", "walmart:marketplace", "samsclub:ads"}
-    assert "unusable" not in payload
+def test_every_platform_is_listed_whether_or_not_it_loaded(loaded):
+    assert set(json.loads(server.get_platforms())) == set(PLATFORM_IDS)
 
 
-def test_the_config_resource_names_an_unusable_platform_and_its_file(
+def test_a_broken_platform_has_no_regions_and_explains_itself_when_asked(
     monkeypatch: pytest.MonkeyPatch, write_config
 ):
     _with_broken_samsclub(monkeypatch, write_config)
-    payload = json.loads(server.get_config())
-    assert payload["usable"] == ["walmart:ads", "walmart:marketplace"]
-    entry = payload["unusable"]["samsclub:ads"]
-    assert entry["source"].endswith("config.json")
-    assert entry["problems"] == 1
-    # The per-platform block carries the problems themselves; the others load on.
-    assert "error" in payload["platforms"]["samsclub:ads"]
-    assert "us" in payload["platforms"]["walmart:ads"]
+    payload = json.loads(server.get_platforms())
+    # The index states topology; a platform that failed to load has none.
+    assert "regions" not in payload["samsclub:ads"]
+    assert "regions" in payload["walmart:ads"]
+    with pytest.raises(ResourceNotFoundError, match="bearer_token"):
+        server.get_hosts("samsclub:ads", "us", "production")
 
 
-def test_the_config_resource_reports_unparsed_files(
+def test_an_unparsed_file_surfaces_when_its_platform_is_asked_for(
     tmp_path: Path, key_file: Path, monkeypatch: pytest.MonkeyPatch
 ):
     data = raw_config()
@@ -744,9 +882,9 @@ def test_the_config_resource_reports_unparsed_files(
     assert key_file.exists() and moved
     monkeypatch.setattr(server, "_config", load_config(path))
     monkeypatch.setattr(server, "_cache", ResponseCache())
-    payload = json.loads(server.get_config())
-    assert "walmart:marketplace" not in payload["usable"]
-    assert list(payload["unparsed_files"])[0].endswith("mp.json")
+    assert "regions" not in json.loads(server.get_platforms())["walmart:marketplace"]
+    with pytest.raises(ResourceNotFoundError, match="mp.json"):
+        server.get_advertisers("walmart:marketplace", "us", "production")
 
 
 @pytest.mark.asyncio

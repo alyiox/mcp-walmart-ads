@@ -26,11 +26,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
 from .platforms import platform_for, platform_of
-from .specs import API_IDS, SpecError, load_spec, meta_for, mirrors_of, spec_path
+from .specs import API_IDS, SpecError, load_spec, meta_for, spec_path
 
 HTTP_METHODS = frozenset({"get", "put", "post", "delete", "options", "head", "patch", "trace"})
 SCHEMA_REF_PREFIX = "#/components/schemas/"
@@ -182,27 +183,56 @@ def _available_apis(platform: str | None = None) -> list[str]:
     return available
 
 
-def list_apis() -> list[dict[str, Any]]:
-    """One row per api: its id, platform, environments, operation count, and title."""
-    rows: list[dict[str, Any]] = []
-    for api in _available_apis():
-        spec, ops = _load_cached(api)
-        info = spec.get("info") or {}
-        meta = meta_for(api)
-        environments = meta.environments_for()
-        row: dict[str, Any] = {
-            "api": api,
-            "platform": meta.platform,
-            "title": info.get("title"),
-            "version": info.get("version"),
-            "operations": len(ops),
-            "environments": list(environments) if environments else "from config",
-        }
-        mirrors = mirrors_of(api)
-        if mirrors:
-            row["mirrored_by"] = list(mirrors)
-        rows.append(row)
-    return rows
+def apis_for(platform: str) -> list[str]:
+    """Api ids on one platform, in declaration order.
+
+    Fully qualified, because that is the form every tool parameter takes: a
+    caller should never have to reassemble an id from the URI it read.
+    """
+    platform_for(platform)  # raises UnknownPlatform, naming PLATFORM_IDS
+    return _available_apis(platform)
+
+
+def api_detail(api: str) -> dict[str, Any]:
+    """Title, version, operation count and tag histogram for one api.
+
+    The histogram is the only published source of legal ``list_endpoints(tag=)``
+    values, and it narrows 87 display operations to the 27 touching creatives
+    without listing one of them. ``only`` states the exception -- an api served
+    by a single environment -- and the norm is left unsaid.
+    """
+    spec, ops = _load_cached(api)
+    info = spec.get("info") or {}
+    detail: dict[str, Any] = {
+        "title": info.get("title"),
+        "version": info.get("version"),
+        "operations": len(ops),
+    }
+    environments = meta_for(api).environments_for()
+    if environments is not None and len(environments) == 1:
+        detail["only"] = environments[0]
+    counts = Counter(tag for op in ops.values() for tag in op.tags)
+    detail["tags"] = dict(sorted(counts.items()))
+    return detail
+
+
+def count_by_api() -> dict[str, int]:
+    """Operations per api -- the cheap answer to "where are the endpoints"."""
+    return {api: len(_load_cached(api)[1]) for api in _available_apis()}
+
+
+def environment_conflict(api: str, environment: str) -> str | None:
+    """Why ``api`` cannot serve ``environment``, or ``None`` when it can.
+
+    Two marketplace specs are single-environment: ``simulations-api`` exists
+    only in the dynamic sandbox and ``recommendations-api`` only in production.
+    Nothing else in the call path knows that, so without this the request goes
+    out and comes back as a Walmart error against the wrong host.
+    """
+    environments = meta_for(api).environments_for()
+    if environments is None or any(environment.casefold() == e.casefold() for e in environments):
+        return None
+    return f"api {api} serves {' and '.join(environments)} only, not {environment!r}"
 
 
 def list_endpoints(
@@ -297,20 +327,13 @@ def get_operation(operation_id: str, *, api: str | None = None) -> Operation:
 def describe_endpoint(operation_id: str, *, api: str | None = None) -> dict[str, Any]:
     """Return one operation plus its transitive ``components.schemas`` closure.
 
-    Deliberately does not report ``mirrored_by``. Mirroring is a property of an
-    api pair, not of an operation: Walmart Connect and Sam's Club share only 13
-    of their 90 distinct sponsored-products operation ids, so surfacing it here
-    would suggest an operation-level equivalence that mostly does not hold.
-    :func:`list_apis` reports it, where the claim is exactly true.
-
     Server-managed headers are removed from the parameter list: they are injected
     from config and the spec itself, so surfacing them would invite an agent to
     supply an access token, a signature, or the single legal ``WM_MARKET`` value.
     """
     op = get_operation(operation_id, api=api)
     spec, _ = _load_cached(op.api)
-    meta = meta_for(op.api)
-    environments = meta.environments_for()
+    environments = meta_for(op.api).environments_for()
 
     raw = dict(op.raw)
     params = raw.get("parameters")
@@ -325,16 +348,18 @@ def describe_endpoint(operation_id: str, *, api: str | None = None) -> dict[str,
             )
         ]
 
-    return {
+    described: dict[str, Any] = {
         "operation_id": op.qualified_id,
         "api": op.api,
         "platform": op.platform,
         "method": op.method.upper(),
         "path": op.path,
-        "environments": list(environments) if environments else "from config",
-        "operation": raw,
-        "components": {"schemas": _resolve_refs(spec, op.raw)},
     }
+    if environments is not None and len(environments) == 1:
+        described["only"] = environments[0]
+    described["operation"] = raw
+    described["components"] = {"schemas": _resolve_refs(spec, op.raw)}
+    return described
 
 
 def _collect_refs(value: Any) -> list[str]:

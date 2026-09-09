@@ -7,11 +7,13 @@ spec's id doubles as its public ``api`` id -- ``<retailer>:<line>:<name>``, e.g.
 rather than a table mapping three of them together. Credentials attach at the
 two-segment prefix; see :mod:`.platforms`.
 
-Two apis *mirror* each other when their ``<line>:<name>`` suffix matches:
-``walmart:ads:sponsored-products`` and ``samsclub:ads:sponsored-products`` are
-the same surface behind different credentials, which is why so many of their
-operation ids collide. :func:`mirrors_of` reports that so an agent can transfer
-what it knows from one to the other.
+Two apis cover the same product surface when their ``<line>:<name>`` suffix
+matches -- ``walmart:ads:sponsored-products`` and
+``samsclub:ads:sponsored-products`` are one surface behind different
+credentials, which is why so many of their operation ids collide. The id says
+so on its own, and the overlap is partial (13 shared operation ids of 90), so
+nothing reports it as data; the api listing's description states the
+convention.
 
 Specs reach us two ways, which is what :data:`SpecSource` distinguishes:
 
@@ -272,18 +274,6 @@ def meta_for(spec_id: str) -> SpecMeta:
     if meta is None:
         raise SpecError(f"unknown api {spec_id!r} (known: {', '.join(SPEC_IDS)})")
     return meta
-
-
-def mirrors_of(api: str) -> tuple[str, ...]:
-    """Other apis with the same ``<line>:<name>`` suffix, behind other credentials.
-
-    Sam's Club mirrors Walmart Connect's sponsored-products surface, so an agent
-    that has learned one can address the other by swapping the retailer.
-    """
-    meta = meta_for(api)
-    return tuple(
-        m.spec_id for m in SPECS if m.spec_id != api and m.suffix == meta.suffix and m.in_surface
-    )
 
 
 def bundled_path(meta: SpecMeta) -> Path:

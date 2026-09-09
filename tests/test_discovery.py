@@ -14,20 +14,48 @@ from mcp_walmart_ads.specs import SpecError
 
 
 def test_every_surface_api_indexes_at_least_one_operation():
-    rows = {r["api"]: r["operations"] for r in discovery.list_apis()}
-    assert set(rows) == set(specs.API_IDS)
-    assert all(count > 0 for count in rows.values())
+    counts = discovery.count_by_api()
+    assert set(counts) == set(specs.API_IDS)
+    assert all(count > 0 for count in counts.values())
 
 
-def test_api_rows_carry_platform_and_environments():
-    rows = {r["api"]: r for r in discovery.list_apis()}
-    assert rows["walmart:ads:sponsored-products"]["platform"] == "walmart:ads"
-    assert rows["walmart:ads:sponsored-products"]["environments"] == "from config"
-    assert rows["walmart:marketplace:simulations-api"]["environments"] == ["sandbox"]
+def test_apis_are_listed_per_platform_as_qualified_ids():
+    assert discovery.apis_for("walmart:ads") == [
+        "walmart:ads:sponsored-products",
+        "walmart:ads:display",
+    ]
+    assert len(discovery.apis_for("walmart:marketplace")) == 28
+
+
+def test_only_names_the_apis_restricted_to_one_environment():
+    restricted = {
+        api: discovery.api_detail(api)["only"]
+        for platform in ("walmart:ads", "samsclub:ads", "walmart:marketplace")
+        for api in discovery.apis_for(platform)
+        if "only" in discovery.api_detail(api)
+    }
+    assert restricted == {
+        "walmart:marketplace:simulations-api": "sandbox",
+        "walmart:marketplace:recommendations-api": "production",
+    }
+
+
+def test_api_detail_counts_operations_under_each_tag():
+    detail = discovery.api_detail("walmart:ads:display")
+    assert detail["operations"] == sum(detail["tags"].values())
+    assert detail["tags"]["Creatives"] == 27
+
+
+def test_an_api_restricted_to_one_environment_conflicts_with_the_other():
+    assert discovery.environment_conflict("walmart:marketplace:simulations-api", "sandbox") is None
+    message = discovery.environment_conflict("walmart:marketplace:simulations-api", "production")
+    assert message is not None and "sandbox only" in message
+    # Signature platforms name their environments in config, so nothing to check.
+    assert discovery.environment_conflict("walmart:ads:display", "whatever") is None
 
 
 def test_auxiliary_specs_are_absent_from_the_api_namespace():
-    assert "walmart:ads:ad-id-token" not in {r["api"] for r in discovery.list_apis()}
+    assert "walmart:ads:ad-id-token" not in discovery.apis_for("walmart:ads")
 
 
 def test_operations_without_a_declared_id_fall_back_to_method_and_path():
@@ -299,54 +327,6 @@ def test_qualified_id_and_platform_derive_from_the_api():
     op = _operation({})
     assert op.qualified_id == "walmart:marketplace:x:X"
     assert op.platform == "walmart:marketplace"
-
-
-# ── mirroring surfaced as data ────────────────────────────────────────────────
-
-
-def test_list_apis_reports_the_mirrored_counterpart():
-    rows = {r["api"]: r for r in discovery.list_apis()}
-    assert rows["walmart:ads:sponsored-products"]["mirrored_by"] == [
-        "samsclub:ads:sponsored-products"
-    ]
-    assert rows["samsclub:ads:sponsored-products"]["mirrored_by"] == [
-        "walmart:ads:sponsored-products"
-    ]
-
-
-def test_an_api_with_no_mirror_omits_the_field():
-    rows = {r["api"]: r for r in discovery.list_apis()}
-    assert "mirrored_by" not in rows["walmart:ads:display"]
-    assert "mirrored_by" not in rows["walmart:marketplace:order-management"]
-
-
-def test_describe_does_not_report_mirroring():
-    # Mirroring is a property of an api pair, not of an operation. Reporting it
-    # here would imply the operation exists on the mirror, which mostly it does
-    # not -- see test_mirrored_apis_overlap_only_partly.
-    for operation_id in (
-        "samsclub:ads:sponsored-products:AdGroupList",
-        "walmart:marketplace:order-management:getAllOrders",
-    ):
-        assert "mirrored_by" not in discovery.describe_endpoint(operation_id)
-
-
-def test_mirrored_apis_overlap_only_partly():
-    """The measurement that keeps `mirrored_by` off describe_endpoint.
-
-    If these two ever converge, reporting mirroring per operation becomes
-    defensible; while they do not, it would steer an agent at endpoints that
-    are not there.
-    """
-    ids = {
-        api: {r["operation_id"].rsplit(":", 1)[1] for r in discovery.list_endpoints(api=api)}
-        for api in ("walmart:ads:sponsored-products", "samsclub:ads:sponsored-products")
-    }
-    walmart, samsclub = ids.values()
-    shared = walmart & samsclub
-    assert shared, "expected some overlap; the apis share a lineage"
-    assert len(shared) < len(samsclub) / 2, "fewer than half of Sam's Club ops exist on Walmart"
-    assert len(shared) < len(walmart) / 2, "fewer than half of Walmart's ops exist on Sam's Club"
 
 
 # ── qualified ids ─────────────────────────────────────────────────────────────

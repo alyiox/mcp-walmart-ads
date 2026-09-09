@@ -291,28 +291,6 @@ def test_spec_meta_defaults_are_surface_and_no_suffix():
     assert meta.rel_path == "walmart/ads/x.openapi.json"
 
 
-# ── mirroring ─────────────────────────────────────────────────────────────────
-
-
-def test_the_two_sponsored_products_apis_mirror_each_other():
-    assert specs.mirrors_of("walmart:ads:sponsored-products") == (
-        "samsclub:ads:sponsored-products",
-    )
-    assert specs.mirrors_of("samsclub:ads:sponsored-products") == (
-        "walmart:ads:sponsored-products",
-    )
-
-
-def test_an_api_with_no_counterpart_mirrors_nothing():
-    assert specs.mirrors_of("walmart:ads:display") == ()
-    assert specs.mirrors_of("walmart:marketplace:order-management") == ()
-
-
-def test_mirrors_never_include_an_auxiliary_spec():
-    for meta in SPECS:
-        assert all(specs.meta_for(m).in_surface for m in specs.mirrors_of(meta.spec_id))
-
-
 # ── the auxiliary specs are addressable, just not discoverable ────────────────
 
 

@@ -21,14 +21,15 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ResourceError, ResourceNotFoundError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, model_serializer
 
 from . import client, discovery, specs
 from .auth import AuthError, TokenManager
 from .client import RequestError
-from .config import Config, ConfigError, SignatureEnv, load_config
-from .platforms import PLATFORM_IDS, UnknownPlatform, platform_of
+from .config import Config, ConfigError, EnvConfig, OAuth2Env, SignatureEnv, load_config
+from .platforms import OAUTH2, PLATFORM_IDS, UnknownPlatform, platform_for, platform_of
 from .resources import ResponseCache, read_cached_response
 from .specs import SpecError
 
@@ -46,20 +47,27 @@ mcp = MCPServer(
         "closure, minus the headers the server supplies itself. Execute "
         "with call_endpoint — by operation_id, or by raw method+path with an api. "
         "walmart:marketplace calls need an advertiser_id, which selects the credential; "
-        "on the ads platforms it is an optional header. Read wmt://apis for the api "
-        "namespace and wmt://config for what is configured. Fetch reports, labels, and "
-        "snapshots with download_file. The 33 bundled specs can be refreshed at runtime "
-        "with refresh_specs."
+        "on the ads platforms it is an optional header. Discovery starts at "
+        "wmt://platforms — what is configured and callable — and descends: "
+        "/{platform}/apis for api ids, /{platform}/apis/{name} for one api's tags, "
+        "/{platform}/regions/{region}/{environment}/advertisers or /hosts for what that "
+        "environment carries. Fetch reports, labels, and snapshots with download_file. "
+        "The 33 bundled specs can be refreshed at runtime with refresh_specs."
     ),
 )
 
 # Declared as Literals so the host rejects a bad value before the call is made,
 # rather than the server returning an error string a round trip later. Both sets
 # are closed and small; ``api`` is deliberately not enumerated -- 31 values on
-# four tools would cost ~1,270 tokens to duplicate what wmt://apis already lists.
+# four tools would cost ~1,270 tokens to duplicate what wmt://platforms/*/apis lists.
 # tests/test_server.py asserts these stay in step with their sources.
 PlatformId = Literal["walmart:ads", "walmart:marketplace", "samsclub:ads"]
 HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
+
+# Above this, describe_endpoint hands back the operation without its response
+# schemas and parks the whole payload at wmt://responses/{operation_id}. It is
+# not truncate_threshold: that is 1 KB by default, below the median describe.
+DESCRIBE_THRESHOLD = 20 * 1024
 
 tokens = TokenManager()
 
@@ -82,7 +90,18 @@ def config() -> Config:
 
 
 def cache() -> ResponseCache:
-    config()
+    """The response cache, which does not depend on a config being present.
+
+    ``config()`` builds it with the configured TTL; on a machine with no config
+    file the discovery tools still cache, on the default TTL, because nothing
+    they park there is credential-derived.
+    """
+    global _cache
+    if _cache is None:
+        try:
+            config()
+        except ConfigError:
+            _cache = ResponseCache()
     assert _cache is not None
     return _cache
 
@@ -116,77 +135,136 @@ class DownloadToolResult(_ExcludeNone):
 # ── resources ──────────────────────────────────────────────────────────────────
 
 
-@mcp.resource(
-    "wmt://config",
-    name="config",
-    description=(
-        "[Walmart] List configured platforms, regions, environments, and their "
-        "advertiser ids or api base URLs. Leads with which platforms are usable; "
-        "a platform listed under unusable will reject every call until its config "
-        "is fixed and the server restarted. Src: config."
-    ),
-)
-def get_config() -> str:
+def _config_or_raise() -> Config:
+    """The loaded config, or a resource error carrying the loader's message.
+
+    A read that cannot be answered fails on the wire rather than returning an
+    error document: the SDK maps this to a JSON-RPC error with the uri attached,
+    and the message already says what to fix and that a fix needs a restart.
+    """
     try:
-        cfg = config()
+        return config()
     except ConfigError as e:
-        return json.dumps({"error": str(e)}, indent=2)
+        raise ResourceError(str(e)) from e
 
-    # Lead with what is usable so one read of this resource answers "what can I
-    # call", instead of leaving a caller to diff the api namespace against which
-    # platforms actually loaded.
-    summary: dict[str, Any] = {"usable": list(cfg.usable)}
-    unusable = {
-        platform: {
-            "source": cfg.platform_sources.get(platform, ""),
-            "problems": len(errors),
-        }
-        for platform, errors in cfg.platform_errors.items()
-    }
-    if unusable:
-        summary["unusable"] = unusable
-    if cfg.file_errors:
-        # A platform can be missing entirely because its file did not parse, so
-        # these are reported even though they belong to no platform.
-        summary["unparsed_files"] = cfg.file_errors
 
-    result: dict[str, Any] = {}
-    for platform, regions in cfg.platforms.items():
-        if platform in cfg.platform_errors:
-            result[platform] = {"error": cfg.platform_errors[platform]}
-            continue
-        result[platform] = {}
-        for region, envs in regions.items():
-            result[platform][region] = {}
-            for env_name, env_cfg in envs.items():
-                if isinstance(env_cfg, SignatureEnv):
-                    result[platform][region][env_name] = {"apis": sorted(env_cfg.base_urls)}
-                else:
-                    advertisers: list[dict[str, Any]] = []
-                    for advertiser_id in env_cfg.advertisers:
-                        # Partner ID is a seller identifier, not a secret, and
-                        # knowing which advertisers have one saves a failed
-                        # payments call.
-                        entry: dict[str, Any] = {"id": advertiser_id}
-                        partner_id = env_cfg.partner_id_for(advertiser_id)
-                        if partner_id:
-                            entry["partner_id"] = partner_id
-                        advertisers.append(entry)
-                    result[platform][region][env_name] = {"advertisers": advertisers}
-    return json.dumps({**summary, "platforms": result}, indent=2)
+def _env_or_raise(platform: str, region: str, environment: str) -> EnvConfig:
+    try:
+        return _config_or_raise().env(platform, region, environment)
+    except ConfigError as e:
+        raise ResourceNotFoundError(str(e)) from e
 
 
 @mcp.resource(
-    "wmt://apis",
-    name="apis",
+    "wmt://platforms",
+    name="platforms",
+    mime_type="application/json",
     description=(
-        "[Walmart] List the api namespace — every api id, its platform, environments, "
-        "operation count, and mirrored_by where another retailer serves the same "
-        "surface. Src: specs."
+        "[Walmart] List every platform, its auth model, and the regions and environments "
+        "it declares. A platform with no regions cannot be called — read one of its "
+        "sub-resources to be told why. oauth2 platforms require an advertiser_id; "
+        "signature platforms do not. Src: platforms."
     ),
 )
-def get_apis() -> str:
-    return json.dumps({"apis": discovery.list_apis()}, indent=2)
+def get_platforms() -> str:
+    """Topology only: what exists, and where a call can be aimed.
+
+    Nothing here is derived from the specs, so a refresh cannot move it and it
+    renders on a machine with no spec files. Nothing here diagnoses either --
+    a platform that failed to load simply has no regions, and asking for one of
+    its environments raises the loader's own message.
+    """
+    cfg = _config_or_raise()
+    out: dict[str, Any] = {}
+    for platform in PLATFORM_IDS:
+        entry: dict[str, Any] = {
+            "auth": "oauth2" if platform_for(platform).auth is OAUTH2 else "signature"
+        }
+        regions = cfg.platforms.get(platform)
+        if regions is not None and platform not in cfg.platform_errors:
+            entry["regions"] = {region: sorted(envs) for region, envs in regions.items()}
+        out[platform] = entry
+    return json.dumps(out, indent=2)
+
+
+@mcp.resource(
+    "wmt://platforms/{platform}/apis",
+    name="apis",
+    mime_type="application/json",
+    description=(
+        "[Walmart] List one platform's api ids, ready to pass as api. Two apis whose "
+        "<line>:<name> suffix matches cover the same surface for different retailers, "
+        "but overlap only partly — an operation on one may not exist on the other. "
+        "Src: specs."
+    ),
+)
+def get_apis(platform: str) -> str:
+    try:
+        return json.dumps(discovery.apis_for(platform), indent=2)
+    except UnknownPlatform as e:
+        raise ResourceNotFoundError(str(e)) from e
+
+
+@mcp.resource(
+    "wmt://platforms/{platform}/apis/{name}",
+    name="api",
+    mime_type="application/json",
+    description=(
+        "[Walmart] Describe one api: title, version, operation count, and its tags with "
+        "the number of operations under each — the legal values for list_endpoints(tag). "
+        "only appears when the api serves a single environment. Src: specs."
+    ),
+)
+def get_api(platform: str, name: str) -> str:
+    """``name`` is the api's last segment, or the whole id, whichever a caller has."""
+    api = name if name.startswith(f"{platform}:") else f"{platform}:{name}"
+    try:
+        return json.dumps(discovery.api_detail(api), indent=2)
+    except SpecError as e:
+        raise ResourceNotFoundError(str(e)) from e
+
+
+@mcp.resource(
+    "wmt://platforms/{platform}/regions/{region}/{environment}/advertisers",
+    name="advertisers",
+    mime_type="application/json",
+    description=(
+        "[Walmart] List one environment's advertiser ids, each mapped to its Walmart "
+        "Partner ID or null. An id selects the credential a walmart:marketplace call "
+        "acts as. Src: platforms."
+    ),
+)
+def get_advertisers(platform: str, region: str, environment: str) -> str:
+    cfg = _env_or_raise(platform, region, environment)
+    if not isinstance(cfg, OAuth2Env):
+        raise ResourceNotFoundError(
+            f"{platform} authenticates by signature and has no advertisers; "
+            f"read wmt://platforms/{platform}/regions/{region}/{environment}/hosts"
+        )
+    return json.dumps(
+        {str(a): cfg.partner_id_for(a) for a in cfg.advertisers},
+        indent=2,
+    )
+
+
+@mcp.resource(
+    "wmt://platforms/{platform}/regions/{region}/{environment}/hosts",
+    name="hosts",
+    mime_type="application/json",
+    description=(
+        "[Walmart] List one environment's api ids mapped to the base URL a call reaches. "
+        "Walmart issues these per tenant, so they come from config rather than the specs. "
+        "Src: platforms."
+    ),
+)
+def get_hosts(platform: str, region: str, environment: str) -> str:
+    cfg = _env_or_raise(platform, region, environment)
+    if not isinstance(cfg, SignatureEnv):
+        raise ResourceNotFoundError(
+            f"{platform} base URLs are fixed by the server, not configured; "
+            f"read wmt://platforms/{platform}/regions/{region}/{environment}/advertisers"
+        )
+    return json.dumps(cfg.base_urls, indent=2)
 
 
 @mcp.resource(
@@ -194,31 +272,27 @@ def get_apis() -> str:
     name="cached_response",
     description="[Walmart] Retrieve full cached API response. Src: responses.",
 )
-def cached_response_resource(request_id: str) -> str:
-    try:
-        content = read_cached_response(request_id, cache())
-    except ConfigError as e:
-        return str(e)
+def get_cached_response(request_id: str) -> str:
+    content = read_cached_response(request_id, cache())
     if content is None:
-        return f"No cached response found for request_id={request_id} (may have expired)."
+        raise ResourceNotFoundError(
+            f"no cached response for request_id={request_id} (it may have expired)"
+        )
     return content
 
 
 @mcp.resource(
     "wmt://curl/{request_id}",
-    name="request_curl",
+    name="cached_curl",
     description=(
         "[Walmart] Retrieve cURL command for a previous API request. "
         "Credentials are replaced with placeholders. Src: responses."
     ),
 )
-def cached_curl_resource(request_id: str) -> str:
-    try:
-        data = cache().get(f"curl/{request_id}")
-    except ConfigError as e:
-        return str(e)
+def get_cached_curl(request_id: str) -> str:
+    data = cache().get(f"curl/{request_id}")
     if data is None:
-        return f"No cURL command found for request_id={request_id} (may have expired)."
+        raise ResourceNotFoundError(f"no cURL for request_id={request_id} (it may have expired)")
     return f"# cURL (credentials replaced with placeholders)\n\n{data}"
 
 
@@ -247,7 +321,7 @@ async def list_endpoints(
             default=None,
             description=(
                 "Limit to one api, e.g. walmart:marketplace:order-management. "
-                "A platform prefix is not accepted here — use platform for that. Src: apis."
+                "A platform prefix is not accepted here — use platform for that. Src: platforms."
             ),
         ),
     ] = None,
@@ -255,7 +329,7 @@ async def list_endpoints(
         PlatformId | None,
         Field(
             default=None,
-            description="Limit to one platform. Src: apis.",
+            description="Limit to one platform. Src: platforms.",
         ),
     ] = None,
     tag: Annotated[
@@ -269,14 +343,44 @@ async def list_endpoints(
         HttpMethod | None,
         Field(default=None, description="Filter by HTTP verb."),
     ] = None,
+    limit: Annotated[
+        int,
+        Field(
+            default=50,
+            ge=1,
+            le=500,
+            description="Rows to return from offset. The largest single api has 87.",
+        ),
+    ] = 50,
+    offset: Annotated[
+        int,
+        Field(default=0, ge=0, description="Rows to skip. Pass next_offset from a prior call."),
+    ] = 0,
 ) -> dict[str, Any]:
+    if query is None and api is None and platform is None and tag is None and method is None:
+        # All 424 rows are 130 KB, and an unfiltered call is what a caller makes
+        # before it knows how to narrow. Say where the operations are instead.
+        counts = discovery.count_by_api()
+        return {
+            "count": sum(counts.values()),
+            "by_api": counts,
+            "hint": "narrow with api, platform, query, tag or method",
+        }
     try:
         endpoints = discovery.list_endpoints(
             query=query, api=api, platform=platform, tag=tag, method=method
         )
     except (SpecError, UnknownPlatform) as e:
         return {"error": str(e)}
-    return {"count": len(endpoints), "endpoints": endpoints}
+    page = endpoints[offset : offset + limit]
+    result: dict[str, Any] = {
+        "count": len(endpoints),
+        "returned": len(page),
+        "endpoints": page,
+    }
+    if offset + len(page) < len(endpoints):
+        result["next_offset"] = offset + len(page)
+    return result
 
 
 @mcp.tool(
@@ -304,15 +408,31 @@ async def describe_endpoint(
             default=None,
             description=(
                 "Api to resolve a bare operation_id in, e.g. "
-                "walmart:ads:sponsored-products. Src: apis."
+                "walmart:ads:sponsored-products. Src: platforms."
             ),
         ),
     ] = None,
 ) -> dict[str, Any]:
     try:
-        return discovery.describe_endpoint(operation_id, api=api)
+        described = discovery.describe_endpoint(operation_id, api=api)
     except SpecError as e:
         return {"error": str(e)}
+
+    if len(json.dumps(described).encode()) <= DESCRIBE_THRESHOLD:
+        return described
+
+    # Response schemas are the bulk -- 66 KB of the largest 90 KB operation --
+    # and the part a caller does not need in order to build a request, so they
+    # are deferred whole rather than truncated mid-structure.
+    request_id = described["operation_id"]
+    cache().put(request_id, described)
+    operation = {k: v for k, v in described["operation"].items() if k != "responses"}
+    return {
+        **described,
+        "operation": operation,
+        "truncated": True,
+        "cached_at": f"wmt://responses/{request_id}",
+    }
 
 
 # ── execution tools ────────────────────────────────────────────────────────────
@@ -331,7 +451,8 @@ def _resolve_target(
     if not api:
         raise RequestError(
             "provide operation_id, or api together with method and path "
-            f"(api is one of the ids in wmt://apis; platforms: {', '.join(PLATFORM_IDS)})"
+            "(api is one of the ids in wmt://platforms/<platform>/apis; "
+            f"platforms: {', '.join(PLATFORM_IDS)})"
         )
     if not method or not path:
         raise RequestError("provide operation_id, or both method and path.")
@@ -360,7 +481,7 @@ def _resolve_target(
 async def call_endpoint(
     region: Annotated[
         str,
-        Field(description="Region label, e.g. us. Src: config."),
+        Field(description="Region label, e.g. us. Src: platforms."),
     ],
     environment: Annotated[
         str,
@@ -368,7 +489,7 @@ async def call_endpoint(
             description=(
                 "Target environment. walmart:marketplace accepts production or "
                 "sandbox; the ads platforms accept whatever the config declares, usually "
-                "production or staging. Src: config."
+                "production or staging. Src: platforms."
             )
         ),
     ],
@@ -391,7 +512,7 @@ async def call_endpoint(
             description=(
                 "Api to call, e.g. walmart:marketplace:order-management. "
                 "Required with raw method+path; otherwise inferred from operation_id. "
-                "Src: apis."
+                "Src: platforms."
             ),
         ),
     ] = None,
@@ -452,7 +573,7 @@ async def call_endpoint(
             description=(
                 "Required on walmart:marketplace, where it selects the credential "
                 "to act as. On the ads platforms it is optional and sent as X-Advertiser-ID, "
-                "which many display/creative/campaign endpoints require. Src: config."
+                "which many display/creative/campaign endpoints require. Src: platforms."
             ),
         ),
     ] = None,
@@ -473,6 +594,10 @@ async def call_endpoint(
         )
     except (SpecError, RequestError) as e:
         return ApiToolResult(error=str(e))
+
+    conflict = discovery.environment_conflict(resolved_api, environment)
+    if conflict is not None:
+        return ApiToolResult(error=conflict)
 
     platform = platform_of(resolved_api)
     try:
@@ -542,7 +667,7 @@ async def call_endpoint(
 async def download_file(
     region: Annotated[
         str,
-        Field(description="Region label, e.g. us. Src: config."),
+        Field(description="Region label, e.g. us. Src: platforms."),
     ],
     environment: Annotated[
         str,
@@ -550,7 +675,7 @@ async def download_file(
             description=(
                 "Target environment. walmart:marketplace accepts production or "
                 "sandbox; the ads platforms accept whatever the config declares, usually "
-                "production or staging. Src: config."
+                "production or staging. Src: platforms."
             )
         ),
     ],
@@ -560,7 +685,7 @@ async def download_file(
             default=None,
             description=(
                 "Platform to authenticate as. Required with a bare url; "
-                "otherwise inferred from operation_id or api. Src: apis."
+                "otherwise inferred from operation_id or api. Src: platforms."
             ),
         ),
     ] = None,
@@ -584,7 +709,7 @@ async def download_file(
         str | None,
         Field(
             default=None,
-            description="Api to call when using method+path. Src: apis.",
+            description="Api to call when using method+path. Src: platforms.",
         ),
     ] = None,
     method: Annotated[
@@ -620,7 +745,7 @@ async def download_file(
             description=(
                 "Required on walmart:marketplace (selects the credential) and by "
                 "display snapshot downloads, where it is sent as X-Advertiser-ID and as the "
-                "advertiserId query parameter. Src: config."
+                "advertiserId query parameter. Src: platforms."
             ),
         ),
     ] = None,
@@ -652,6 +777,9 @@ async def download_file(
         )
 
     if resolved_api is not None:
+        conflict = discovery.environment_conflict(resolved_api, environment)
+        if conflict is not None:
+            return DownloadToolResult(error=conflict)
         platform = platform_of(resolved_api)  # type: ignore[assignment]
     if platform is None:
         return DownloadToolResult(
@@ -764,7 +892,7 @@ async def refresh_specs(
             description=(
                 "Refresh only this api, e.g. "
                 "walmart:marketplace:order-management. The two auxiliary walmart:ads specs "
-                "are valid here. Src: apis."
+                "are valid here. Src: platforms."
             ),
         ),
     ] = None,

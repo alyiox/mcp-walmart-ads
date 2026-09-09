@@ -36,9 +36,10 @@ acquisition, and header construction.
   `samsclub:ads:sponsored-products`. An operation id appends `:operationId`. Credentials
   attach at the two-segment prefix, so an operation id alone resolves to a host and an
   auth model without the caller naming either
-- **Mirrored surfaces are reported** — Sam's Club mirrors Walmart Connect's
-  sponsored-products API, so `wmt://apis` and `describe_endpoint` carry `mirrored_by`
-  and an agent can move what it knows from one retailer to the other
+- **One naming convention, two retailers** — apis whose `<line>:<name>` suffix matches
+  cover the same surface for different retailers (`walmart:ads:sponsored-products` and
+  `samsclub:ads:sponsored-products`), so an agent can move what it knows across; the
+  overlap is partial, 13 shared operation ids of 90
 - **Spec-driven discovery** — list/describe endpoints from 33 bundled OpenAPI specs,
   refreshable at runtime; `describe_endpoint` returns an operation plus its full
   `components.schemas` closure and strips the headers the server owns
@@ -209,8 +210,10 @@ live in drop-in files under `config.d/`, merged over the base:
   moving a platform into `config.d/` needs no path edits.
 - No `config.d/` directory means no change in behavior.
 
-Read `wmt://config` to see which platforms loaded, which are unusable and from which
-file, and any file that could not be parsed.
+Read `wmt://platforms` to see which platforms loaded and what regions and environments
+they declare. A platform that failed to load has no regions; reading one of its
+environments returns the loader's own message — which file, which fields, and that a
+fix needs a restart.
 
 > **The config is read once at startup.** A corrected file needs the server restarted.
 
@@ -291,8 +294,11 @@ to refresh all 33, the two auxiliary `walmart:ads` specs included.
 
 | Resource URI | Description |
 |---|---|
-| `wmt://config` | Configured platforms, regions, environments, and their advertiser ids or api base URLs |
-| `wmt://apis` | The api namespace — every api id, its platform, environments, operation count, and `mirrored_by` where another retailer serves the same surface |
+| `wmt://platforms` | Every platform, its auth model, and the regions and environments it declares |
+| `wmt://platforms/{platform}/apis` | That platform's api ids |
+| `wmt://platforms/{platform}/apis/{name}` | One api: title, version, operation count, and its tags with a count each — the legal `list_endpoints(tag=…)` values |
+| `wmt://platforms/{platform}/regions/{region}/{environment}/advertisers` | Advertiser ids mapped to their Walmart Partner ID (`null` when unset) |
+| `wmt://platforms/{platform}/regions/{region}/{environment}/hosts` | Api ids mapped to the base URL a call reaches |
 | `wmt://responses/{request_id}` | Full body of a truncated response or a cached download (in memory, TTL from config) |
 | `wmt://curl/{request_id}` | Reproducible cURL for a previous request, credentials replaced with placeholders |
 

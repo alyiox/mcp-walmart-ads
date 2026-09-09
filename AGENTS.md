@@ -109,7 +109,7 @@ Normative, high-density metadata: enough for correct tool and parameter selectio
 
 * No `[Walmart]` prefix: a parameter is only read inside its own tool's schema.
 * Noun phrase, not Verb-Object. Use a verb only for a filter or an action (`Limit to one api`, `Filter by HTTP verb`).
-* `Src: <Entity>` for entities this server owns — region/environment/advertiser_id → `config`, operation id → `operations`, api/platform → `apis`.
+* `Src: <Entity>` for entities this server owns — region/environment/advertiser_id/api/platform → `platforms`, operation id → `operations`.
 * Give an example when the shape is not obvious from the name, and keep it current — a stale id steers an agent to build one that cannot resolve.
 
 ### Closed value sets
