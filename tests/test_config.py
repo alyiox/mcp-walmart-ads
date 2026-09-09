@@ -149,11 +149,13 @@ def test_non_object_config_raises(tmp_path: Path):
 
 
 def test_missing_platforms_key_raises(tmp_path: Path):
+    # Absent `platforms` is legal on its own -- config.d/ may supply them -- so
+    # the failure is "nothing configured anywhere", raised after the merge.
     path = tmp_path / "c.json"
     path.write_text(json.dumps({"response_cache_ttl": 60}))
     with pytest.raises(ConfigError) as excinfo:
         load_config(path)
-    assert "platforms: required" in str(excinfo.value)
+    assert "No platform is configured" in str(excinfo.value)
 
 
 def test_unknown_platform_and_unknown_top_level_field_fail_the_file(write_config):
@@ -579,3 +581,31 @@ def test_usable_excludes_a_platform_with_errors(write_config):
     cfg = load_config(write_config(data))
     assert "samsclub:ads" not in cfg.usable
     assert set(cfg.usable) == {"walmart:ads", "walmart:marketplace"}
+
+
+def test_a_scalars_only_base_config_is_valid_when_config_d_supplies_platforms(split_config):
+    # The tidiest layout: config.json holds server-wide settings and nothing else.
+    data = raw_config()
+    drop = {"platforms": data.pop("platforms")}
+    cfg = load_config(split_config({**data, "response_cache_ttl": 60}, {"all.json": drop}))
+    assert len(cfg.usable) == 3
+    assert cfg.response_cache_ttl == 60
+    assert all(src.endswith("all.json") for src in cfg.platform_sources.values())
+
+
+def test_no_platform_anywhere_is_an_error_naming_both_places(tmp_path: Path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"response_cache_ttl": 3600}))
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(path)
+    message = str(excinfo.value)
+    assert "No platform is configured" in message
+    assert "config.d" in message and "walmart:ads" in message
+
+
+def test_a_non_object_platforms_key_is_still_rejected(tmp_path: Path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"platforms": []}))
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(path)
+    assert "must be an object" in str(excinfo.value)

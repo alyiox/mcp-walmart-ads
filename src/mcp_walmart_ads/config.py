@@ -619,18 +619,25 @@ def load_config(path: Path | None = None) -> Config:
     if not isinstance(raw, dict):
         raise ConfigError(f"Config file at {path} must contain a JSON object")
 
+    if isinstance(raw.get("regions"), dict):
+        # The pre-0.2 single-platform shape. Say so, rather than reporting a
+        # missing key the reader has never heard of.
+        raise ConfigError(
+            f"Config file at {path} uses the pre-0.2 shape (top-level 'regions'). "
+            "Nest it under a platform: "
+            '{"platforms": {"walmart:ads": {"regions": …}}} — one of '
+            f"{', '.join(PLATFORM_IDS)}. See config.example.json."
+        )
+
+    # `platforms` may be absent here when every platform lives in config.d/,
+    # which is the tidiest layout: this file then holds only server-wide
+    # settings. Whether anything was configured at all is judged after the
+    # drop-ins are merged.
     raw_platforms = raw.get("platforms")
-    if not isinstance(raw_platforms, dict) or not raw_platforms:
-        if isinstance(raw.get("regions"), dict):
-            # The pre-0.2 single-platform shape. Say so, rather than reporting a
-            # missing key the reader has never heard of.
-            raise ConfigError(
-                f"Config file at {path} uses the pre-0.2 shape (top-level 'regions'). "
-                "Nest it under a platform: "
-                '{"platforms": {"walmart:ads": {"regions": …}}} — one of '
-                f"{', '.join(PLATFORM_IDS)}. See config.example.json."
-            )
-        raise ConfigError("platforms: required, must be a non-empty object")
+    if raw_platforms is None:
+        raw_platforms = {}
+    elif not isinstance(raw_platforms, dict):
+        raise ConfigError("platforms: must be an object")
 
     top_errors: list[str] = []
     platform_errors: dict[str, list[str]] = {}
@@ -688,6 +695,13 @@ def load_config(path: Path | None = None) -> Config:
     unknown = set(raw) - {"platforms", "response_cache_ttl", "truncate_threshold"}
     if unknown:
         top_errors.append(f"unknown top-level field(s) {', '.join(sorted(unknown))}")
+
+    if not platforms and not file_errors:
+        raise ConfigError(
+            f"No platform is configured. Declare one in {path} under 'platforms', or in "
+            f"a {CONFIG_D}/*.json beside it — one of {', '.join(PLATFORM_IDS)}. "
+            "See config.example.json."
+        )
 
     if top_errors:
         raise ConfigError("Config validation failed:\n" + "\n".join(f"  - {e}" for e in top_errors))
