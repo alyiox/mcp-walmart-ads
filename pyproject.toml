@@ -1,6 +1,6 @@
 [project]
 name = "mcp-walmart-ads"
-version = "0.2.0a0"
+version = "0.2.0"
 description = "MCP server for Walmart Connect Ads, Sam's Club Sponsored Ads, and Walmart Marketplace APIs"
 readme = "README.md"
 requires-python = ">=3.13"
