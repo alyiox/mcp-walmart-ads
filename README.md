@@ -67,7 +67,7 @@ Set up your config (see [Configuration](#configuration)), then run the server:
 
 ```bash
 # Run directly with uvx (no clone needed)
-npx -y @modelcontextprotocol/inspector uvx mcp-walmart-ads
+npx -y @modelcontextprotocol/inspector@latest uvx mcp-walmart-ads
 ```
 
 ```bash
@@ -75,7 +75,7 @@ npx -y @modelcontextprotocol/inspector uvx mcp-walmart-ads
 git clone https://github.com/alyiox/mcp-walmart-ads.git
 cd mcp-walmart-ads
 uv sync
-npx -y @modelcontextprotocol/inspector uv run mcp-walmart-ads
+npx -y @modelcontextprotocol/inspector@latest uv run mcp-walmart-ads
 ```
 
 ## Configuration
