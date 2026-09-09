@@ -725,3 +725,77 @@ async def test_every_parameter_naming_a_configured_entity_declares_its_lineage()
             if tag is None:
                 continue
             assert tag in prop.get("description", ""), f"{tool.name}.{name} lacks '{tag}'"
+
+
+# ── config health reported to a caller ────────────────────────────────────────
+
+
+def _with_broken_samsclub(monkeypatch: pytest.MonkeyPatch, write_config) -> None:
+    data = raw_config()
+    data["platforms"]["samsclub:ads"]["regions"]["us"]["production"].pop("bearer_token")
+    cfg = load_config(write_config(data))
+    monkeypatch.setattr(server, "_config", cfg)
+    monkeypatch.setattr(server, "_cache", ResponseCache())
+
+
+def test_the_config_resource_leads_with_what_is_usable(loaded):
+    payload = json.loads(server.get_config())
+    assert list(payload)[0] == "usable"
+    assert set(payload["usable"]) == {"walmart:ads", "walmart:marketplace", "samsclub:ads"}
+    assert "unusable" not in payload
+
+
+def test_the_config_resource_names_an_unusable_platform_and_its_file(
+    monkeypatch: pytest.MonkeyPatch, write_config
+):
+    _with_broken_samsclub(monkeypatch, write_config)
+    payload = json.loads(server.get_config())
+    assert payload["usable"] == ["walmart:ads", "walmart:marketplace"]
+    entry = payload["unusable"]["samsclub:ads"]
+    assert entry["source"].endswith("config.json")
+    assert entry["problems"] == 1
+
+
+def test_the_config_resource_reports_unparsed_files(
+    tmp_path: Path, key_file: Path, monkeypatch: pytest.MonkeyPatch
+):
+    data = raw_config()
+    moved = {"walmart:marketplace": data["platforms"].pop("walmart:marketplace")}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(data))
+    (tmp_path / "config.d").mkdir()
+    (tmp_path / "config.d" / "mp.json").write_text("{ not json")
+    assert key_file.exists() and moved
+    monkeypatch.setattr(server, "_config", load_config(path))
+    monkeypatch.setattr(server, "_cache", ResponseCache())
+    payload = json.loads(server.get_config())
+    assert "walmart:marketplace" not in payload["usable"]
+    assert list(payload["unparsed_files"])[0].endswith("mp.json")
+
+
+@pytest.mark.asyncio
+async def test_a_call_to_an_unusable_platform_tells_the_caller_what_to_do(
+    monkeypatch: pytest.MonkeyPatch, write_config
+):
+    _with_broken_samsclub(monkeypatch, write_config)
+    result = await server.call_endpoint(
+        region="us",
+        environment="production",
+        operation_id="samsclub:ads:sponsored-products:LatestReportDate",
+    )
+    error = result.error or ""
+    assert "samsclub:ads is not usable" in error
+    assert "restart" in error
+    assert "Usable now: walmart:ads, walmart:marketplace" in error
+
+
+@pytest.mark.asyncio
+async def test_discovery_stays_silent_about_a_broken_platform(
+    monkeypatch: pytest.MonkeyPatch, write_config
+):
+    # Deliberate: discovery must work with no credentials at all, so it never
+    # consults the config and cannot warn. The call-time error carries the news.
+    _with_broken_samsclub(monkeypatch, write_config)
+    result = await server.list_endpoints(platform="samsclub:ads")
+    assert result["count"] > 0
+    assert "error" not in result

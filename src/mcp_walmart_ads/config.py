@@ -4,6 +4,16 @@ Shape (``~/.config/mcp-walmart-ads/config.json``)::
 
     platforms.<platform>.regions.<region>.<environment> = <auth block>
 
+An optional ``config.d/`` beside that file holds drop-in platform files, merged
+over the base. Each may declare **only** ``platforms``, so ownership of the
+server-wide scalars is never ambiguous; a platform defined in two places is an
+error naming both files rather than silent precedence; and only ``*.json``
+directly in the directory is read, so editor and backup litter is ignored by
+construction. The point is blast radius: the marketplace block is 88% of a
+populated config, and a stray comma while editing it currently takes down every
+platform, because a parse failure precedes per-platform validation. Split out,
+an unparseable file costs only its own platforms.
+
 ``<platform>`` is the two-segment prefix an api id starts with -- ``walmart:ads``,
 ``walmart:marketplace``, ``samsclub:ads`` -- so a config key is literally the
 value passed as the ``platform`` tool parameter, with nothing to translate.
@@ -57,7 +67,11 @@ from typing import Any, TypeVar
 from .platforms import OAUTH2, PLATFORM_IDS, platform_for
 from .specs import API_IDS, SPECS
 
-CONFIG_PATH = Path.home() / ".config" / "mcp-walmart-ads" / "config.json"
+CONFIG_DIR = Path.home() / ".config" / "mcp-walmart-ads"
+CONFIG_PATH = CONFIG_DIR / "config.json"
+
+# Drop-in directory name, resolved beside whichever config file is loaded.
+CONFIG_D = "config.d"
 
 _V = TypeVar("_V")
 
@@ -183,23 +197,61 @@ EnvConfig = SignatureEnv | OAuth2Env
 
 @dataclass(frozen=True)
 class Config:
-    """Loaded config: per-platform environments, plus per-platform load errors."""
+    """Loaded config: per-platform environments, and everything that went wrong.
+
+    ``platform_errors`` holds validation failures for a platform that loaded;
+    ``file_errors`` holds files that could not be parsed at all, which is a
+    separate case because an unreadable file's platforms are unknowable -- a
+    platform may be missing *because* its file did not parse, and a caller
+    asking for it deserves to be told so rather than "not configured".
+    """
 
     platforms: CaseInsensitiveDict[CaseInsensitiveDict[CaseInsensitiveDict[EnvConfig]]]
     response_cache_ttl: int
     truncate_threshold: int
     platform_errors: dict[str, list[str]] = field(default_factory=dict)
+    platform_sources: dict[str, str] = field(default_factory=dict)
+    file_errors: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def usable(self) -> tuple[str, ...]:
+        """Platforms that loaded cleanly and can serve a request."""
+        return tuple(p for p in self.platforms if p not in self.platform_errors)
+
+    def _usable_note(self) -> str:
+        usable = self.usable
+        return f"Usable now: {', '.join(usable)}." if usable else "No platform is usable."
 
     def env(self, platform: str, region: str, environment: str) -> EnvConfig:
-        """Resolve one environment, raising this platform's own errors if it failed."""
+        """Resolve one environment, or raise an error a caller can act on.
+
+        The message leads with the remedy rather than the diagnosis: the server
+        cannot repair its own config, and it reads the file once at startup, so
+        an agent that retries after a fix without a restart will fail
+        identically. Repeated failure shapes are collapsed and the still-usable
+        platforms named, so one error answers "what now" without another call.
+        """
         errors = self.platform_errors.get(platform)
         if errors:
+            source = self.platform_sources.get(platform, str(CONFIG_PATH))
             raise ConfigError(
-                f"platform {platform!r} failed config validation:\n"
-                + "\n".join(f"  - {e}" for e in errors)
+                f"{platform} is not usable: {len(errors)} config "
+                f"problem{'s' if len(errors) != 1 else ''} in {source}\n"
+                "Report these to the user; the server cannot fix them, and it reads the "
+                "config once at startup, so a corrected file needs a server restart.\n"
+                + "\n".join(f"  - {e}" for e in _collapse(_relative(platform, errors)))
+                + f"\n{self._usable_note()}"
             )
         regions = self.platforms.get(platform)
         if regions is None:
+            if self.file_errors:
+                unreadable = ", ".join(sorted(self.file_errors))
+                raise ConfigError(
+                    f"{platform} is not configured, and {len(self.file_errors)} config "
+                    f"file(s) could not be parsed ({unreadable}) -- it may be declared "
+                    f"in one of those. Report this to the user; a fix needs a server "
+                    f"restart. {self._usable_note()}"
+                )
             known = ", ".join(self.platforms.keys()) or "none"
             raise ConfigError(f"platform {platform!r} is not configured (configured: {known})")
         envs = regions.get(region)
@@ -219,6 +271,41 @@ class Config:
 
 
 # ── loading ───────────────────────────────────────────────────────────────────
+
+
+# How many problems to spell out before summarising the rest. A caller needs the
+# shape of the failure, not an inventory: six lines differing only by region cost
+# tokens and say one thing.
+_MAX_REPORTED_ERRORS = 6
+
+
+def _relative(platform: str, errors: list[str]) -> list[str]:
+    """Drop the ``platforms."<platform>".`` prefix, which the lead line states."""
+    prefix = f'platforms."{platform}".'
+    return [e[len(prefix) :] if e.startswith(prefix) else e for e in errors]
+
+
+def _collapse(errors: list[str]) -> list[str]:
+    """Group errors sharing a message, then cap the list.
+
+    Identical messages at different locations are one fact -- a missing keys
+    directory reads as six "cannot read" lines -- so the locations are joined and
+    the message stated once.
+    """
+    grouped: dict[str, list[str]] = {}
+    for error in errors:
+        location, _, message = error.partition(": ")
+        grouped.setdefault(message or error, []).append(location)
+    out = [
+        f"{locations[0]}: {message}"
+        if len(locations) == 1
+        else f"{', '.join(locations)}: {message}"
+        for message, locations in grouped.items()
+    ]
+    if len(out) > _MAX_REPORTED_ERRORS:
+        hidden = len(out) - _MAX_REPORTED_ERRORS
+        out = out[:_MAX_REPORTED_ERRORS] + [f"... and {hidden} more"]
+    return out
 
 
 # Platform ids as they were spelled before 0.2, so a stale config gets told what
@@ -421,7 +508,14 @@ def _load_signature_env(
         try:
             pem = path.read_text(encoding="utf-8").strip()
         except OSError as e:
-            local.append(f"{where}.private_key: cannot read {path} ({e})")
+            # Relative to the config dir and without the errno prose: the reader
+            # knows where their config lives, and identical messages collapse.
+            try:
+                shown = path.relative_to(config_dir)
+            except ValueError:
+                shown = path
+            reason = "no such file" if isinstance(e, FileNotFoundError) else type(e).__name__
+            local.append(f"{where}.private_key: cannot read {shown} ({reason})")
     elif raw_key is not None and not isinstance(raw_key, str):
         local.append(f"{where}.private_key: must be a path string")
 
@@ -540,25 +634,53 @@ def load_config(path: Path | None = None) -> Config:
 
     top_errors: list[str] = []
     platform_errors: dict[str, list[str]] = {}
+    platform_sources: dict[str, str] = {}
+    file_errors: dict[str, str] = {}
     platforms: CaseInsensitiveDict[CaseInsensitiveDict[CaseInsensitiveDict[EnvConfig]]]
     platforms = CaseInsensitiveDict()
 
-    for platform, raw_platform in raw_platforms.items():
-        if platform not in PLATFORM_IDS:
-            hint = _LEGACY_PLATFORMS.get(platform)
-            detail = (
-                f"renamed to {hint!r} in 0.2"
-                if hint
-                else f"expected one of {', '.join(PLATFORM_IDS)}"
-            )
-            top_errors.append(f"{_where(platform)}: unknown platform ({detail})")
+    _merge_platforms(
+        raw_platforms,
+        source=path,
+        config_dir=path.parent,
+        platforms=platforms,
+        platform_errors=platform_errors,
+        platform_sources=platform_sources,
+        top_errors=top_errors,
+    )
+
+    # Drop-in files are merged over the base. Each is parsed on its own so an
+    # unreadable one costs only its own platforms, which is the whole reason the
+    # directory exists.
+    for extra in _drop_in_files(path):
+        try:
+            block = json.loads(extra.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            file_errors[str(extra)] = str(e)
             continue
-        errors: list[str] = []
-        platforms[platform] = _load_platform(
-            raw_platform, platform=platform, config_dir=path.parent, errors=errors
+        if not isinstance(block, dict):
+            file_errors[str(extra)] = "must contain a JSON object"
+            continue
+        stray = set(block) - {"platforms"}
+        if stray:
+            file_errors[str(extra)] = (
+                f"may declare only 'platforms'; found {', '.join(sorted(stray))}. "
+                "Server-wide settings belong in config.json."
+            )
+            continue
+        raw_extra = block.get("platforms")
+        if not isinstance(raw_extra, dict) or not raw_extra:
+            file_errors[str(extra)] = "platforms: required, must be a non-empty object"
+            continue
+        _merge_platforms(
+            raw_extra,
+            source=extra,
+            config_dir=path.parent,
+            platforms=platforms,
+            platform_errors=platform_errors,
+            platform_sources=platform_sources,
+            top_errors=top_errors,
         )
-        if errors:
-            platform_errors[platform] = errors
 
     ttl = _positive_int(raw, "response_cache_ttl", 3600, top_errors)
     threshold = _positive_int(raw, "truncate_threshold", 1024, top_errors)
@@ -575,7 +697,67 @@ def load_config(path: Path | None = None) -> Config:
         response_cache_ttl=ttl,
         truncate_threshold=threshold,
         platform_errors=platform_errors,
+        platform_sources=platform_sources,
+        file_errors=file_errors,
     )
+
+
+def _drop_in_files(base: Path) -> list[Path]:
+    """``*.json`` directly inside ``config.d/``, sorted for a stable merge order.
+
+    Only that exact glob: a ``.bak`` or an editor swap file beside a real config
+    is litter, and silently merging one would be worse than ignoring it.
+    """
+    directory = base.parent / CONFIG_D
+    if not directory.is_dir():
+        return []
+    return sorted(p for p in directory.glob("*.json") if p.is_file())
+
+
+def _merge_platforms(
+    raw_platforms: dict[str, Any],
+    *,
+    source: Path,
+    config_dir: Path,
+    platforms: CaseInsensitiveDict[CaseInsensitiveDict[CaseInsensitiveDict[EnvConfig]]],
+    platform_errors: dict[str, list[str]],
+    platform_sources: dict[str, str],
+    top_errors: list[str],
+) -> None:
+    """Load one file's platforms into the accumulating config.
+
+    A platform already claimed by another file is a hard error naming both: last
+    write wins would make a duplicated credential block invisible, and the point
+    of splitting the config is to make a file's blast radius obvious.
+
+    ``config_dir`` is the base config's directory for every file, not the
+    declaring file's own -- so a relative ``private_key`` means the same thing
+    whether its platform sits in ``config.json`` or in ``config.d/x.json``, and
+    splitting an existing config needs no path edits.
+    """
+    for platform, raw_platform in raw_platforms.items():
+        if platform not in PLATFORM_IDS:
+            hint = _LEGACY_PLATFORMS.get(platform)
+            detail = (
+                f"renamed to {hint!r} in 0.2"
+                if hint
+                else f"expected one of {', '.join(PLATFORM_IDS)}"
+            )
+            top_errors.append(f"{source}: {_where(platform)}: unknown platform ({detail})")
+            continue
+        if platform in platform_sources:
+            top_errors.append(
+                f"platform {platform!r} is declared twice: in "
+                f"{platform_sources[platform]} and {source}"
+            )
+            continue
+        errors: list[str] = []
+        platforms[platform] = _load_platform(
+            raw_platform, platform=platform, config_dir=config_dir, errors=errors
+        )
+        platform_sources[platform] = str(source)
+        if errors:
+            platform_errors[platform] = errors
 
 
 def _positive_int(raw: dict[str, Any], key: str, default: int, errors: list[str]) -> int:

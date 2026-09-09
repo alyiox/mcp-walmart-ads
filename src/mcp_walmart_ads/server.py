@@ -121,7 +121,9 @@ class DownloadToolResult(_ExcludeNone):
     name="config",
     description=(
         "[Walmart] List configured platforms, regions, environments, and their "
-        "advertiser ids or api base URLs. Src: config."
+        "advertiser ids or api base URLs. Leads with which platforms are usable; "
+        "a platform listed under unusable will reject every call until its config "
+        "is fixed and the server restarted. Src: config."
     ),
 )
 def get_config() -> str:
@@ -129,6 +131,24 @@ def get_config() -> str:
         cfg = config()
     except ConfigError as e:
         return json.dumps({"error": str(e)}, indent=2)
+
+    # Lead with what is usable so one read of this resource answers "what can I
+    # call", instead of leaving a caller to diff the api namespace against which
+    # platforms actually loaded.
+    summary: dict[str, Any] = {"usable": list(cfg.usable)}
+    unusable = {
+        platform: {
+            "source": cfg.platform_sources.get(platform, ""),
+            "problems": len(errors),
+        }
+        for platform, errors in cfg.platform_errors.items()
+    }
+    if unusable:
+        summary["unusable"] = unusable
+    if cfg.file_errors:
+        # A platform can be missing entirely because its file did not parse, so
+        # these are reported even though they belong to no platform.
+        summary["unparsed_files"] = cfg.file_errors
 
     result: dict[str, Any] = {}
     for platform, regions in cfg.platforms.items():
@@ -153,7 +173,7 @@ def get_config() -> str:
                             entry["partner_id"] = partner_id
                         advertisers.append(entry)
                     result[platform][region][env_name] = {"advertisers": advertisers}
-    return json.dumps({"platforms": result}, indent=2)
+    return json.dumps({**summary, "platforms": result}, indent=2)
 
 
 @mcp.resource(

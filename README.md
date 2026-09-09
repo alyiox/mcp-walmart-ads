@@ -185,6 +185,35 @@ fixed by the server and absent from the file; `environment` must be `production`
 Regions are a namespace, not a route — for `walmart:marketplace` every region reaches the
 same hosts. The level exists because advertiser ids are only unique within a region.
 
+### Splitting the config
+
+A populated `walmart:marketplace` block can be tens of kilobytes of credentials —
+88% of the file here — and a stray comma while editing it takes down every platform,
+because a parse failure happens before any per-platform validation. So platforms may
+live in drop-in files under `config.d/`, merged over the base:
+
+```
+~/.config/mcp-walmart-ads/
+├── config.json                  # server-wide settings, and any platforms you like
+├── config.d/
+│   ├── walmart-marketplace.json # only a "platforms" object
+│   └── samsclub-ads.json
+└── keys/
+```
+
+- A drop-in may declare **only** `platforms`; server-wide settings stay in `config.json`.
+- A platform declared in two files is an **error naming both** — never silent precedence.
+- Only `*.json` directly in `config.d/` is read, so `.bak` and editor swap files are ignored.
+- A file that fails to parse costs **only its own platforms**; the rest keep working.
+- Relative `private_key` paths resolve against `config.json`'s directory either way, so
+  moving a platform into `config.d/` needs no path edits.
+- No `config.d/` directory means no change in behavior.
+
+Read `wmt://config` to see which platforms loaded, which are unusable and from which
+file, and any file that could not be parsed.
+
+> **The config is read once at startup.** A corrected file needs the server restarted.
+
 ### Top-level options
 
 | Field | Default | Notes |
