@@ -297,8 +297,8 @@ to refresh all 33, the two auxiliary `walmart:ads` specs included.
 | `wmt://platforms` | Every platform, its auth model, and the regions and environments it declares |
 | `wmt://platforms/{platform}/apis` | That platform's api ids |
 | `wmt://platforms/{platform}/apis/{name}` | One api: title, version, operation count, and its tags with a count each — the legal `list_endpoints(tag=…)` values |
-| `wmt://platforms/{platform}/regions/{region}/{environment}/advertisers` | Advertiser ids mapped to their Walmart Partner ID (`null` when unset) |
-| `wmt://platforms/{platform}/regions/{region}/{environment}/hosts` | Api ids mapped to the base URL a call reaches |
+| `wmt://platforms/walmart:marketplace/regions/{region}/{environment}/advertisers` | Advertiser ids mapped to their Walmart Partner ID (`null` when unset) |
+| `wmt://platforms/{platform}/regions/{region}/{environment}/hosts` | Api ids mapped to the base URL a call reaches, or `*` for every api whose host the server owns |
 | `wmt://responses/{request_id}` | Full body of a truncated response or a cached download (in memory, TTL from config) |
 | `wmt://curl/{request_id}` | Reproducible cURL for a previous request, credentials replaced with placeholders |
 

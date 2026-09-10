@@ -12,7 +12,7 @@ from mcp.server.mcpserver.exceptions import ResourceError, ResourceNotFoundError
 
 from mcp_walmart_ads import server
 from mcp_walmart_ads.config import load_config
-from mcp_walmart_ads.platforms import PLATFORM_IDS
+from mcp_walmart_ads.platforms import OAUTH2, PLATFORM_IDS, platform_for
 from mcp_walmart_ads.resources import ResponseCache
 from mcp_walmart_ads.specs import SPEC_IDS
 from tests.conftest import raw_config
@@ -143,7 +143,7 @@ async def test_the_resource_surface_is_platform_rooted():
     assert templates == {
         "wmt://platforms/{platform}/apis",
         "wmt://platforms/{platform}/apis/{name}",
-        "wmt://platforms/{platform}/regions/{region}/{environment}/advertisers",
+        "wmt://platforms/walmart:marketplace/regions/{region}/{environment}/advertisers",
         "wmt://platforms/{platform}/regions/{region}/{environment}/hosts",
         "wmt://responses/{request_id}",
         "wmt://curl/{request_id}",
@@ -160,7 +160,9 @@ async def test_every_resource_is_named_for_what_it_returns():
         "wmt://platforms": "platforms",
         "wmt://platforms/{platform}/apis": "apis",
         "wmt://platforms/{platform}/apis/{name}": "api",
-        "wmt://platforms/{platform}/regions/{region}/{environment}/advertisers": "advertisers",
+        "wmt://platforms/walmart:marketplace/regions/{region}/{environment}/advertisers": (
+            "advertisers"
+        ),
         "wmt://platforms/{platform}/regions/{region}/{environment}/hosts": "hosts",
         "wmt://responses/{request_id}": "cached_response",
         "wmt://curl/{request_id}": "cached_curl",
@@ -176,7 +178,7 @@ def test_no_resource_leaks_credential_material(loaded):
             server.get_platforms(),
             server.get_apis("walmart:marketplace"),
             server.get_api("walmart:ads", "display"),
-            server.get_advertisers("walmart:marketplace", "us", "production"),
+            server.get_advertisers("us", "production"),
             server.get_hosts("walmart:ads", "us", "production"),
         )
     )
@@ -195,7 +197,7 @@ def test_no_payload_echoes_a_segment_of_its_own_uri(loaded):
     for text in (
         server.get_apis("walmart:ads"),
         server.get_api("walmart:ads", "display"),
-        server.get_advertisers("walmart:marketplace", "us", "production"),
+        server.get_advertisers("us", "production"),
         server.get_hosts("walmart:ads", "us", "production"),
     ):
         payload = json.loads(text)
@@ -228,7 +230,7 @@ def test_one_api_is_addressable_by_name_or_by_qualified_id(loaded):
 
 
 def test_the_advertisers_resource_maps_ids_to_partner_ids(loaded):
-    payload = json.loads(server.get_advertisers("walmart:marketplace", "us", "production"))
+    payload = json.loads(server.get_advertisers("us", "production"))
     assert payload == {"7060158": "10001234", "7060159": None}
 
 
@@ -240,16 +242,38 @@ def test_the_hosts_resource_maps_apis_to_base_urls(loaded):
     }
 
 
-def test_asking_an_environment_for_the_wrong_entity_names_the_right_one(loaded):
-    with pytest.raises(ResourceNotFoundError, match="hosts"):
-        server.get_advertisers("walmart:ads", "us", "production")
-    with pytest.raises(ResourceNotFoundError, match="advertisers"):
-        server.get_hosts("walmart:marketplace", "us", "production")
+@pytest.mark.asyncio
+async def test_the_advertisers_uri_hardcodes_the_one_oauth2_platform():
+    # A slot with a single legal value invites the substitution it cannot take,
+    # so the platform is a literal -- pinned here to the auth model it mirrors.
+    template = next(
+        str(t.uri_template)
+        for t in await server.mcp.list_resource_templates()
+        if t.name == "advertisers"
+    )
+    platform = template.removeprefix("wmt://platforms/").split("/", 1)[0]
+    assert platform_for(platform).auth is OAUTH2
+    assert [p for p in PLATFORM_IDS if platform_for(p).auth is OAUTH2] == [platform]
+
+
+def test_the_hosts_resource_answers_for_a_marketplace_environment(loaded):
+    # Server-owned hosts are one fact, not 28 copies of it.
+    assert json.loads(server.get_hosts("walmart:marketplace", "us", "production")) == {
+        "*": "https://marketplace.walmartapis.com"
+    }
+
+
+def test_a_diverging_base_suffix_is_named_beside_the_shared_host(loaded):
+    payload = json.loads(server.get_hosts("walmart:marketplace", "us", "sandbox"))
+    assert payload == {
+        "*": "https://sandbox.walmartapis.com",
+        "walmart:marketplace:simulations-api": "https://sandbox.walmartapis.com/v1",
+    }
 
 
 def test_an_unconfigured_environment_is_a_wire_error_naming_what_exists(loaded):
     with pytest.raises(ResourceNotFoundError, match="production"):
-        server.get_advertisers("walmart:marketplace", "us", "prod")
+        server.get_advertisers("us", "prod")
 
 
 def test_the_cached_response_resource_reports_an_unknown_id(loaded):
@@ -825,6 +849,26 @@ async def test_every_description_is_namespaced_and_non_empty():
 
 
 @pytest.mark.asyncio
+async def test_metadata_never_abbreviates_a_resource_uri_to_a_fragment():
+    # An agent composed wmt://samsclub:ads/regions/... from a "/{platform}/..."
+    # fragment in these strings. Every URI mentioned must be complete.
+    texts = [server.mcp.instructions or ""]
+    texts += [r.description or "" for r in await server.mcp.list_resources()]
+    texts += [t.description or "" for t in await server.mcp.list_resource_templates()]
+    texts += [t.description or "" for t in await server.mcp.list_tools()]
+    for text in texts:
+        for token in text.split():
+            if "{" in token and "/" in token:
+                assert token.startswith("wmt://"), f"bare URI fragment {token!r} in: {text[:80]}…"
+
+
+def test_the_fragment_guard_catches_the_shape_that_caused_the_incident():
+    bad = "descends: /{platform}/regions/{region}/{environment}/advertisers"
+    offenders = [t for t in bad.split() if "{" in t and "/" in t and not t.startswith("wmt://")]
+    assert offenders == ["/{platform}/regions/{region}/{environment}/advertisers"]
+
+
+@pytest.mark.asyncio
 async def test_every_parameter_naming_a_configured_entity_declares_its_lineage():
     # AGENTS.md: parameters referring to entities this server owns carry Src:.
     expected = {
@@ -884,7 +928,7 @@ def test_an_unparsed_file_surfaces_when_its_platform_is_asked_for(
     monkeypatch.setattr(server, "_cache", ResponseCache())
     assert "regions" not in json.loads(server.get_platforms())["walmart:marketplace"]
     with pytest.raises(ResourceNotFoundError, match="mp.json"):
-        server.get_advertisers("walmart:marketplace", "us", "production")
+        server.get_advertisers("us", "production")
 
 
 @pytest.mark.asyncio

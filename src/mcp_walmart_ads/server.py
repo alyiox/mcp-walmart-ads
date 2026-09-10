@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import gzip
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -31,7 +32,7 @@ from .client import RequestError
 from .config import Config, ConfigError, EnvConfig, OAuth2Env, SignatureEnv, load_config
 from .platforms import OAUTH2, PLATFORM_IDS, UnknownPlatform, platform_for, platform_of
 from .resources import ResponseCache, read_cached_response
-from .specs import SpecError
+from .specs import SpecError, resolve_base_url
 
 mcp = MCPServer(
     "Walmart APIs",
@@ -47,11 +48,14 @@ mcp = MCPServer(
         "closure, minus the headers the server supplies itself. Execute "
         "with call_endpoint — by operation_id, or by raw method+path with an api. "
         "walmart:marketplace calls need an advertiser_id, which selects the credential; "
-        "on the ads platforms it is an optional header. Discovery starts at "
-        "wmt://platforms — what is configured and callable — and descends: "
-        "/{platform}/apis for api ids, /{platform}/apis/{name} for one api's tags, "
-        "/{platform}/regions/{region}/{environment}/advertisers or /hosts for what that "
-        "environment carries. Fetch reports, labels, and snapshots with download_file. "
+        "on the ads platforms it is an optional header. Read wmt://platforms for what is "
+        "configured and callable, then the full URI beneath it: "
+        "wmt://platforms/{platform}/apis for api ids, "
+        "wmt://platforms/{platform}/apis/{name} for one api's tags, "
+        "wmt://platforms/walmart:marketplace/regions/{region}/{environment}/advertisers "
+        "for advertiser ids, and "
+        "wmt://platforms/{platform}/regions/{region}/{environment}/hosts for the base URL "
+        "a call reaches. Fetch reports, labels, and snapshots with download_file. "
         "The 33 bundled specs can be refreshed at runtime with refresh_specs."
     ),
 )
@@ -63,6 +67,10 @@ mcp = MCPServer(
 # tests/test_server.py asserts these stay in step with their sources.
 PlatformId = Literal["walmart:ads", "walmart:marketplace", "samsclub:ads"]
 HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
+
+# The one oauth2 platform, and so the only one with advertisers. It appears
+# literally in that resource's URI; a test pins the two together.
+MARKETPLACE = "walmart:marketplace"
 
 # Above this, describe_endpoint hands back the operation without its response
 # schemas and parks the whole payload at wmt://responses/{operation_id}. It is
@@ -148,6 +156,34 @@ def _config_or_raise() -> Config:
         raise ResourceError(str(e)) from e
 
 
+def _hosts(platform: str, cfg: EnvConfig) -> dict[str, str]:
+    """Api id -> the base URL a call reaches, for one environment.
+
+    Config-derived hosts are enumerated per api, because Walmart issues each one
+    per tenant and each is separately settable. A platform whose hosts the server
+    owns states the one fact once under ``*`` and names only the apis whose
+    ``base_suffix`` diverges from it -- listing all 28 marketplace apis costs
+    2,113 bytes to repeat a constant and implies a per-api host that does not
+    exist.
+    """
+    if isinstance(cfg, SignatureEnv):
+        return {
+            api: resolve_base_url(api, cfg.environment, config_base_urls=cfg.base_urls)
+            for api in cfg.base_urls
+        }
+
+    urls: dict[str, str] = {}
+    for api in discovery.apis_for(platform):
+        try:
+            urls[api] = resolve_base_url(api, cfg.environment)
+        except SpecError:
+            continue  # the api is not served in this environment
+    if not urls:
+        return {}
+    shared, _ = Counter(urls.values()).most_common(1)[0]
+    return {"*": shared, **{api: url for api, url in urls.items() if url != shared}}
+
+
 def _env_or_raise(platform: str, region: str, environment: str) -> EnvConfig:
     try:
         return _config_or_raise().env(platform, region, environment)
@@ -225,26 +261,25 @@ def get_api(platform: str, name: str) -> str:
 
 
 @mcp.resource(
-    "wmt://platforms/{platform}/regions/{region}/{environment}/advertisers",
+    "wmt://platforms/walmart:marketplace/regions/{region}/{environment}/advertisers",
     name="advertisers",
     mime_type="application/json",
     description=(
         "[Walmart] List one environment's advertiser ids, each mapped to its Walmart "
-        "Partner ID or null. An id selects the credential a walmart:marketplace call "
-        "acts as. Src: platforms."
+        "Partner ID or null. An id selects the credential a call acts as, and is required "
+        "on every walmart:marketplace call. Src: platforms."
     ),
 )
-def get_advertisers(platform: str, region: str, environment: str) -> str:
-    cfg = _env_or_raise(platform, region, environment)
-    if not isinstance(cfg, OAuth2Env):
-        raise ResourceNotFoundError(
-            f"{platform} authenticates by signature and has no advertisers; "
-            f"read wmt://platforms/{platform}/regions/{region}/{environment}/hosts"
-        )
-    return json.dumps(
-        {str(a): cfg.partner_id_for(a) for a in cfg.advertisers},
-        indent=2,
-    )
+def get_advertisers(region: str, environment: str) -> str:
+    """The platform is a literal because only an oauth2 platform has advertisers.
+
+    Left as a parameter it would be a slot with one legal value, which invites
+    the substitution it cannot accept; tests/test_server.py pins the segment to
+    the oauth2 platform so the two cannot drift.
+    """
+    cfg = _env_or_raise(MARKETPLACE, region, environment)
+    assert isinstance(cfg, OAuth2Env)
+    return json.dumps({str(a): cfg.partner_id_for(a) for a in cfg.advertisers}, indent=2)
 
 
 @mcp.resource(
@@ -252,19 +287,14 @@ def get_advertisers(platform: str, region: str, environment: str) -> str:
     name="hosts",
     mime_type="application/json",
     description=(
-        "[Walmart] List one environment's api ids mapped to the base URL a call reaches. "
-        "Walmart issues these per tenant, so they come from config rather than the specs. "
+        "[Walmart] List the base URL a call reaches in one environment, keyed by api id — "
+        'or by "*", meaning every other api the platform serves there. Walmart issues the '
+        "ads hosts per tenant, so those come from config; marketplace hosts are fixed. "
         "Src: platforms."
     ),
 )
 def get_hosts(platform: str, region: str, environment: str) -> str:
-    cfg = _env_or_raise(platform, region, environment)
-    if not isinstance(cfg, SignatureEnv):
-        raise ResourceNotFoundError(
-            f"{platform} base URLs are fixed by the server, not configured; "
-            f"read wmt://platforms/{platform}/regions/{region}/{environment}/advertisers"
-        )
-    return json.dumps(cfg.base_urls, indent=2)
+    return json.dumps(_hosts(platform, _env_or_raise(platform, region, environment)), indent=2)
 
 
 @mcp.resource(
