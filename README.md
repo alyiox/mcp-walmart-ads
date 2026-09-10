@@ -179,7 +179,9 @@ Environment names are free-form for these platforms — Walmart may issue a tena
 
 Advertiser ids nest under the credential that serves them, so a secret appears exactly
 once and a dangling advertiser reference is structurally impossible. `partner_id` is
-per-seller because two `payments` operations require it as `WM_PARTNER_ID`. Base URLs are
+per-seller because two `payments` operations require it as `WM_PARTNER_ID`; an all-zero
+value is read as absent, since that is what a generated config writes for a seller
+without one. `scripts/backfill_partner_ids.py` fills the absent ones from Walmart. Base URLs are
 fixed by the server and absent from the file; `environment` must be `production` or
 `sandbox`.
 

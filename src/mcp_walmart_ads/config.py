@@ -339,7 +339,10 @@ def _normalize_api_key(key: str, platform: str) -> str:
 
 
 def _load_advertiser(raw: Any, *, where: str, errors: list[str]) -> Advertiser | None:
-    """Parse an ``{"id": …, "partner_id": …}`` entry."""
+    """Parse an ``{"id": …, "partner_id": …}`` entry.
+
+    An all-zero ``partner_id`` is read as absent; see below for why.
+    """
     if not isinstance(raw, dict):
         errors.append(
             f'{where}: must be an object, e.g. {{"id": 7060158}} — a bare id is not accepted'
@@ -360,6 +363,15 @@ def _load_advertiser(raw: Any, *, where: str, errors: list[str]) -> Advertiser |
         if not partner_id:
             errors.append(f"{where}.partner_id: must not be empty")
             return None
+        if set(partner_id) == {"0"}:
+            # A generated config writes 00000000000 where the seller has no
+            # Partner ID. Kept as written it reads as present: the resource
+            # advertises it and the payments guard passes, so the placeholder
+            # reaches Walmart as WM_PARTNER_ID. Absent is what it means, and
+            # absent is already handled -- the call is refused naming the field
+            # to fill. Normalized rather than rejected, because an error here
+            # would make the whole platform unusable over a missing value.
+            partner_id = None
 
     unknown = set(raw) - {"id", "partner_id"}
     if unknown:

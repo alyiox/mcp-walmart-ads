@@ -87,6 +87,24 @@ def test_oauth2_platform_indexes_advertisers_by_credential(config_file: Path):
     assert env.partner_id_for(7060159) is None
 
 
+def test_an_all_zero_partner_id_is_read_as_absent(write_config):
+    # Generated configs carry 00000000000 for a seller that has none. Left as
+    # written it would be sent as WM_PARTNER_ID and pass the payments guard.
+    data = raw_config()
+    advertisers = data["platforms"]["walmart:marketplace"]["regions"]["us"]["production"][
+        "credentials"
+    ][0]["advertisers"]
+    advertisers[0]["partner_id"] = "00000000000"
+    advertisers[1]["partner_id"] = 0
+    cfg = load_config(write_config(data))
+    env = cfg.env("walmart:marketplace", "us", "production")
+    assert isinstance(env, OAuth2Env)
+    assert env.partner_id_for(7060158) is None
+    assert env.partner_id_for(7060159) is None
+    # Not an error: a missing value must not cost the platform its usability.
+    assert cfg.platform_errors == {}
+
+
 def test_region_and_environment_lookup_is_case_insensitive(config_file: Path):
     cfg = load_config(config_file)
     assert cfg.env("WALMART:ADS", "US", "production") is cfg.env("walmart:ads", "us", "production")
