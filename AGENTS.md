@@ -77,16 +77,22 @@ Follow existing project conventions.
 
 ## Attribution
 
-All commits must include an `Assisted-by` trailer line:
+Every AI-assisted commit, tag, PR, comment, reply, or message an agent writes
+for someone must carry an `Assisted-by` trailer:
 
 ```
 Assisted-by: AGENT_NAME:MODEL_VERSION [TOOL1] [TOOL2]
 ```
 
-* **AGENT_NAME** — the AI tool or framework used (e.g. `Claude`, `Cursor`, `Copilot`)
-* **MODEL_VERSION** — the specific model version (e.g. `claude-opus-4-6`)
-* **[TOOL1] [TOOL2]** — optional, space-separated list of specialized analysis tools used in the change (e.g. `coccinelle`, `sparse`, `smatch`, `clang-tidy`)
-* Do **not** list everyday tools like `git`, `gcc`, `make`, or editors
+| Field             | Description                                               |
+|-------------------|-----------------------------------------------------------|
+| `AGENT_NAME`      | AI tool or framework (e.g. `Claude`, `Cursor`, `Copilot`) |
+| `MODEL_VERSION`   | Specific model (e.g. `claude-opus-4-6`)                   |
+| `[TOOL1] [TOOL2]` | Optional specialized analysis tools; omit everyday tools  |
+
+* Place it at the **end**, after a blank line: a git trailer in commits, the last line of the body everywhere else.
+* Skip it only for text the user dictates verbatim.
+* Use only `Assisted-by` — no `Co-Authored-By`, no `Made with …`, no hand-written `Sent using …`, no other footers.
 
 Example:
 
