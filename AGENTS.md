@@ -126,12 +126,8 @@ Normative, high-density metadata: enough for correct tool and parameter selectio
 
 ### Annotations
 
-* **Every tool MUST declare `ToolAnnotations`**, mapped from the operation it performs:
-  * Read → `read_only_hint=True`
-  * Create → `read_only_hint=False`, `destructive_hint=False`, `idempotent_hint=False`
-  * Update → `read_only_hint=False`, `destructive_hint=False`, `idempotent_hint=True`
-  * Delete → `read_only_hint=False`, `destructive_hint=True`
-  * A passthrough tool that can perform any of the above takes the most cautious shape (`destructive_hint=True`, `idempotent_hint=False`)
-  * Set `open_world_hint=True` when the tool reaches the network, `False` when it only reads bundled specs or config
-  * Omit `destructive_hint`/`idempotent_hint` on read-only tools — they are meaningful only when `read_only_hint=False`
-* Writing to the local filesystem is not read-only, even when the network call is a read.
+* **Every tool MUST declare `ToolAnnotations`** — hints, not guarantees, that a host turns into a consent prompt.
+* `read_only_hint=True` claims the tool changes nothing anywhere: writing a local file is a change.
+* `destructive_hint` and `idempotent_hint` matter only when `read_only_hint=False` — set both there, omit both otherwise. Both are positive claims: `destructive_hint=False` promises additive-only writes, `idempotent_hint=True` promises a repeat call with the same arguments has no further effect.
+* `open_world_hint` tracks the domain of interaction, not the I/O — `False` only when that domain is fixed at build time (bundled data, local config).
+
