@@ -293,11 +293,15 @@ whenever you turn it back on, and the manual refresh still works.
 To refresh now, having hit an endpoint the bundled spec does not have:
 
 ```bash
+# Installed with uvx (no clone)
+uvx mcp-walmart-ads --refresh
+
+# Or from a source checkout
 uv run mcp-walmart-ads --refresh
 ```
 
-That sweeps every spec regardless of the interval, printing one row per document:
-`written`, `unchanged`, or `error`.
+Either form sweeps every spec regardless of the interval and writes the same user cache,
+printing one row per document: `written`, `unchanged`, or `error`.
 
 There is deliberately no tool for this. A stale spec is indistinguishable from a current
 one from inside a session — it simply lacks an endpoint — so an agent asked to decide
