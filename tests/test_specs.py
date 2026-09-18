@@ -268,7 +268,6 @@ async def test_refresh_writes_the_cache(tmp_path: Path, monkeypatch: pytest.Monk
             "status": "written",
             "version": "9.9",
             "operations": 1,
-            "cached_at": str(tmp_path / "walmart" / "ads" / "sponsored-products.openapi.json"),
         }
     ]
     assert (tmp_path / "walmart" / "ads" / "sponsored-products.openapi.json").is_file()

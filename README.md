@@ -292,6 +292,16 @@ Re-fetch bundled specs into a user cache that then takes precedence over the bun
 copies. Pass `api` to refresh one — e.g. `walmart:marketplace:order-management` — or omit
 to refresh all 33, the two auxiliary `walmart:ads` specs included.
 
+Deliberately user-driven: a stale spec is indistinguishable from a current one from
+inside a session — it simply lacks an endpoint — so the agent has no signal telling it
+when a refresh is worthwhile, while you do. Nothing refreshes unprompted; the bundled
+specs are the floor and a release ships current ones.
+
+A document is written only once it yields an operation, so an upstream answering `200`
+with an error body cannot poison the cache, and a byte-identical document is left alone —
+each row reports `written`, `unchanged`, or `error`. A cached file that will not load
+falls back to the bundled copy and is discarded.
+
 ## MCP resources
 
 | Resource URI | Description |

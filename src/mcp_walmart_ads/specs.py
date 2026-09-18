@@ -478,7 +478,6 @@ async def refresh(
                     "status": "written" if written else "unchanged",
                     "version": info.get("version"),
                     "operations": operations,
-                    "cached_at": str(cache_path(meta)),
                 }
             )
     return results

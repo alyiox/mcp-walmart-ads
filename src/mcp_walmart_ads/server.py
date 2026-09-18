@@ -903,10 +903,13 @@ async def download_file(
     name="refresh_specs",
     description=(
         "[Walmart] Refresh OpenAPI specs into the user cache, which then takes precedence over "
-        "the bundled copies. Omit api to refresh all 33."
+        "the bundled copies. Call when the user asks for it, or when they report an endpoint "
+        "the bundled spec does not have — nothing else here signals that a spec is stale. "
+        "Omit api to refresh all 33. Rows report written, unchanged, or error."
     ),
     # Writes the user spec cache: an update, not a delete — re-running it
-    # against the same upstream state converges on the same cache.
+    # against the same upstream state converges on the same cache, and an
+    # unchanged document is not rewritten at all.
     annotations=ToolAnnotations(
         read_only_hint=False,
         destructive_hint=False,

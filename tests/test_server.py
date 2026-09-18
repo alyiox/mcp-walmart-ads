@@ -700,7 +700,6 @@ async def test_refresh_reports_a_written_count(tmp_path: Path, monkeypatch: pyte
                 "status": "written",
                 "version": "1",
                 "operations": 1,
-                "cached_at": str(tmp_path / "walmart" / "ads" / "sponsored-products.openapi.json"),
             }
         ],
     }
