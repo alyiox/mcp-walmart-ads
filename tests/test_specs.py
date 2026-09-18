@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -64,31 +65,34 @@ def test_samsclub_is_the_only_url_sourced_spec():
     assert url_sourced == ["samsclub:ads:sponsored-products"]
 
 
-def test_auth_headers_are_attached_only_for_an_authenticated_url_source():
+@pytest.mark.asyncio
+async def test_auth_headers_are_attached_only_for_an_authenticated_url_source():
     seen: dict[str, object] = {}
 
     class FakeClient:
         def __init__(self, **_: object) -> None:
             pass
 
-        def __enter__(self) -> FakeClient:
+        async def __aenter__(self) -> FakeClient:
             return self
 
-        def __exit__(self, *_: object) -> None:
+        async def __aexit__(self, *_: object) -> None:
             return None
 
-        def get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+        async def get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
             seen[url] = headers
             return httpx.Response(200, json={"openapi": "3.0.0"}, request=httpx.Request("GET", url))
 
-    original = httpx.Client
-    httpx.Client = FakeClient  # type: ignore[misc, assignment]
+    original = httpx.AsyncClient
+    httpx.AsyncClient = FakeClient  # type: ignore[misc, assignment]
     try:
-        specs.fetch_spec(UrlSource("https://example.test/a"), headers={"X-Sig": "1"})
-        specs.fetch_spec(UrlSource("https://example.test/b", auth=True), headers={"X-Sig": "1"})
-        specs.fetch_spec(RegistrySource("uuid-1"), headers={"X-Sig": "1"})
+        await specs.fetch_spec(UrlSource("https://example.test/a"), headers={"X-Sig": "1"})
+        await specs.fetch_spec(
+            UrlSource("https://example.test/b", auth=True), headers={"X-Sig": "1"}
+        )
+        await specs.fetch_spec(RegistrySource("uuid-1"), headers={"X-Sig": "1"})
     finally:
-        httpx.Client = original  # type: ignore[misc]
+        httpx.AsyncClient = original  # type: ignore[misc]
 
     assert seen["https://example.test/a"] is None
     assert seen["https://example.test/b"] == {"X-Sig": "1"}
@@ -249,13 +253,21 @@ def test_bundled_files_are_stored_verbatim():
 # ── refresh ───────────────────────────────────────────────────────────────────
 
 
+def _stub_fetch(monkeypatch: pytest.MonkeyPatch, result: object) -> None:
+    """Answer every fetch from memory: ``result``, or ``result(source)`` if callable."""
+
+    async def fetch(source, headers=None, timeout=30.0, deadline=60.0):
+        return result(source) if callable(result) else result
+
+    monkeypatch.setattr(specs, "fetch_spec", fetch)
+
+
 @pytest.mark.asyncio
 async def test_refresh_writes_the_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
-    monkeypatch.setattr(
-        specs,
-        "fetch_spec",
-        lambda source, headers=None, timeout=30.0: {
+    _stub_fetch(
+        monkeypatch,
+        {
             "openapi": "3.0.0",
             "info": {"version": "9.9"},
             "paths": {"/a": {"get": {"operationId": "a"}}},
@@ -279,12 +291,12 @@ async def test_refresh_reports_per_spec_errors_without_aborting(
 ):
     monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
 
-    def flaky(source, headers=None, timeout=30.0):
+    def flaky(source):
         if isinstance(source, UrlSource):
             raise httpx.ConnectError("boom")
         return {"openapi": "3.0.0", "info": {}, "paths": {"/a": {"get": {}}}}
 
-    monkeypatch.setattr(specs, "fetch_spec", flaky)
+    _stub_fetch(monkeypatch, flaky)
     rows = await specs.refresh()
     statuses = {r["api"]: r["status"] for r in rows}
     assert statuses["samsclub:ads:sponsored-products"] == "error"
@@ -312,7 +324,7 @@ async def test_refresh_refuses_a_document_with_no_operations(
     document: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
-    monkeypatch.setattr(specs, "fetch_spec", lambda source, headers=None, timeout=30.0: document)
+    _stub_fetch(monkeypatch, document)
     rows = await specs.refresh("walmart:ads:sponsored-products")
     assert rows[0]["status"] == "error"
     assert "no operations" in rows[0]["error"]
@@ -341,14 +353,7 @@ def test_write_spec_leaves_an_identical_file_alone(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_refresh_reports_an_unchanged_spec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
-    monkeypatch.setattr(
-        specs,
-        "fetch_spec",
-        lambda source, headers=None, timeout=30.0: {
-            "info": {"version": "1"},
-            "paths": {"/a": {"get": {}}},
-        },
-    )
+    _stub_fetch(monkeypatch, {"info": {"version": "1"}, "paths": {"/a": {"get": {}}}})
     assert (await specs.refresh("walmart:ads:display"))[0]["status"] == "written"
     assert (await specs.refresh("walmart:ads:display"))[0]["status"] == "unchanged"
 
@@ -375,3 +380,161 @@ def test_the_unknown_api_error_lists_every_spec_it_accepts():
     assert "walmart:ads:ad-id-token" in message
     assert "walmart:ads:conversions" in message
     assert "walmart:marketplace:order-management" in message
+
+
+# ── background refresh ────────────────────────────────────────────────────────
+
+
+def _state(tmp_path: Path) -> dict:
+    return json.loads((tmp_path / "spec-state.json").read_text(encoding="utf-8"))
+
+
+def _good_doc(_source=None) -> dict:
+    return {"info": {"version": "1"}, "paths": {"/a": {"get": {}}}}
+
+
+@pytest.mark.asyncio
+async def test_a_sweep_records_every_spec_it_attempted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    _stub_fetch(monkeypatch, _good_doc())
+
+    rows = await specs.refresh_due(now=1000.0)
+
+    assert len(rows) == len(SPECS)
+    recorded = _state(tmp_path)["specs"]
+    assert set(recorded) == {m.spec_id for m in SPECS}
+    assert all(row["attempted"] == 1000.0 for row in recorded.values())
+
+
+@pytest.mark.asyncio
+async def test_a_spec_refreshed_inside_the_interval_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    _stub_fetch(monkeypatch, _good_doc())
+
+    assert await specs.refresh_due(interval=100.0, now=1000.0) != []
+    assert await specs.refresh_due(interval=100.0, now=1050.0) == []
+    assert len(await specs.refresh_due(interval=100.0, now=1200.0)) == len(SPECS)
+
+
+@pytest.mark.asyncio
+async def test_force_ignores_the_interval(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    _stub_fetch(monkeypatch, _good_doc())
+
+    await specs.refresh_due(interval=100.0, now=1000.0)
+    assert len(await specs.refresh_due(interval=100.0, force=True, now=1001.0)) == len(SPECS)
+
+
+@pytest.mark.asyncio
+async def test_a_live_lease_holds_off_a_second_sweeper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # Stand in for another process mid-sweep: a lease that has not yet expired.
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    _stub_fetch(monkeypatch, _good_doc())
+    (tmp_path).mkdir(parents=True, exist_ok=True)
+    (tmp_path / "spec-state.json").write_text(json.dumps({"lease_expires": 2000.0}))
+
+    assert await specs.refresh_due(now=1999.0) == []
+    assert await specs.refresh_due(now=2001.0) != []
+
+
+@pytest.mark.asyncio
+async def test_a_failed_spec_is_not_retried_until_the_next_interval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+
+    def broken(source):
+        raise httpx.ConnectError("upstream down")
+
+    _stub_fetch(monkeypatch, broken)
+    rows = await specs.refresh_due(interval=100.0, now=1000.0)
+
+    assert {r["status"] for r in rows} == {"error"}
+    assert _state(tmp_path)["specs"]["walmart:ads:display"]["attempted"] == 1000.0
+    # An upstream that is down is retried once per interval, not on every tick.
+    assert await specs.refresh_due(interval=100.0, now=1050.0) == []
+
+
+@pytest.mark.asyncio
+async def test_an_interrupted_sweep_resumes_where_it_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    seen: list[str] = []
+
+    def fail_after_two(source):
+        seen.append(source.url)
+        if len(seen) > 2:
+            raise RuntimeError("process died")
+        return _good_doc()
+
+    _stub_fetch(monkeypatch, fail_after_two)
+    with pytest.raises(RuntimeError):
+        await specs.refresh_due(now=1000.0)
+
+    done = set(_state(tmp_path)["specs"])
+    assert len(done) == 2
+
+    # The lease has lapsed; the next sweeper picks up the rest, not the whole set.
+    seen.clear()
+    _stub_fetch(monkeypatch, _good_doc())
+    rows = await specs.refresh_due(now=1000.0 + specs.LEASE_TTL + 1)
+    assert {r["api"] for r in rows} == {m.spec_id for m in SPECS} - done
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_state_file_is_treated_as_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # A crash can truncate the state mid-write; it is derived data, so a damaged
+    # read costs one extra sweep rather than raising.
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    _stub_fetch(monkeypatch, _good_doc())
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "spec-state.json").write_bytes(b'{"lease_expires": 20')
+
+    assert len(await specs.refresh_due(now=1000.0)) == len(SPECS)
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_sweep_releases_the_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+
+    def cancel_on_second(source):
+        if (tmp_path / "spec-state.json").is_file() and _state(tmp_path).get("specs"):
+            raise asyncio.CancelledError
+        return _good_doc()
+
+    _stub_fetch(monkeypatch, cancel_on_second)
+    with pytest.raises(asyncio.CancelledError):
+        await specs.refresh_due(now=1000.0)
+
+    # Without the release, the next process waits out the whole TTL.
+    assert _state(tmp_path)["lease_expires"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_the_loop_survives_a_failing_sweep(monkeypatch: pytest.MonkeyPatch):
+    calls = 0
+
+    async def exploding(**_):
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("network gone")
+
+    monkeypatch.setattr(specs, "refresh_due", exploding)
+    task = asyncio.create_task(specs.refresh_loop(0.01))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert calls > 1  # a failed sweep must not end the loop

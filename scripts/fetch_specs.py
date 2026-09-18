@@ -5,9 +5,9 @@ Run from the repo root::
     uv run python scripts/fetch_specs.py [api ...]
 
 Writes specs verbatim into ``src/mcp_walmart_ads/specs/<platform>/``. With no
-arguments, refreshes every registry-sourced spec. The runtime ``refresh_specs``
-tool does the same thing into the user cache dir; this script updates the copy
-that ships in the wheel.
+arguments, refreshes every registry-sourced spec. The server's background
+refresh does the same thing into the user cache dir; this script updates the
+copy that ships in the wheel.
 
 Sam's Club is skipped unless named explicitly: its spec is hand-authored from
 the developer docs, and its ``UrlSource`` points at the committed file in this
@@ -18,6 +18,7 @@ instead.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 
 from mcp_walmart_ads.specs import (
@@ -43,7 +44,7 @@ def main(argv: list[str]) -> int:
 
     total = 0
     for meta in metas:
-        spec = fetch_spec(meta.source)
+        spec = asyncio.run(fetch_spec(meta.source))
         target = bundled_path(meta)
         changed = write_spec(target, spec)
         size = target.stat().st_size

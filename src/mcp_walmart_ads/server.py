@@ -15,9 +15,14 @@ independently meaningful.
 
 from __future__ import annotations
 
+import asyncio
 import gzip
 import json
+import logging
+import sys
 from collections import Counter
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -29,13 +34,59 @@ from pydantic import BaseModel, Field, model_serializer
 from . import client, discovery, specs
 from .auth import AuthError, TokenManager
 from .client import RequestError
-from .config import Config, ConfigError, EnvConfig, OAuth2Env, SignatureEnv, load_config
+from .config import (
+    DEFAULT_SPEC_REFRESH,
+    Config,
+    ConfigError,
+    EnvConfig,
+    OAuth2Env,
+    SignatureEnv,
+    SpecRefresh,
+    load_config,
+)
 from .platforms import OAUTH2, PLATFORM_IDS, UnknownPlatform, platform_for, platform_of
 from .resources import ResponseCache, read_cached_response
 from .specs import SpecError, resolve_base_url
 
+
+def _spec_refresh() -> SpecRefresh:
+    """The refresh policy, from the config if there is one.
+
+    A machine with no config file still discovers and still refreshes: the whole
+    discovery surface works without credentials, so a missing config must not be
+    what decides whether specs stay current.
+    """
+    try:
+        return config().spec_refresh
+    except ConfigError:
+        return DEFAULT_SPEC_REFRESH
+
+
+@asynccontextmanager
+async def _lifespan(_: MCPServer) -> AsyncIterator[None]:
+    """Run the background spec refresh for as long as the server is up.
+
+    The trigger for a refresh lives outside the session -- this schedule, or the
+    ``--refresh`` flag -- because staleness is invisible from inside one: a stale
+    spec simply lacks an endpoint, so an agent asked to judge would either never
+    refresh or refresh superstitiously after an unrelated failure.
+    """
+    policy = _spec_refresh()
+    if not policy.auto:
+        yield None
+        return
+    task = asyncio.create_task(specs.refresh_loop(policy.interval_seconds))
+    try:
+        yield None
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
 mcp = MCPServer(
     "Walmart APIs",
+    lifespan=_lifespan,
     instructions=(
         "MCP server for Walmart Connect Ads, Sam's Club Sponsored Ads, and Walmart "
         "Marketplace APIs. Api ids are hierarchical — <retailer>:<line>:<name>, e.g. "
@@ -56,7 +107,7 @@ mcp = MCPServer(
         "for advertiser ids, and "
         "wmt://platforms/{platform}/regions/{region}/{environment}/hosts for the base URL "
         "a call reaches. Fetch reports, labels, and snapshots with download_file. "
-        "The 33 bundled specs can be refreshed at runtime with refresh_specs."
+        "The 33 bundled specs are refreshed in the background on a schedule."
     ),
 )
 
@@ -896,58 +947,32 @@ async def download_file(
     )
 
 
-# ── refresh ────────────────────────────────────────────────────────────────────
-
-
-@mcp.tool(
-    name="refresh_specs",
-    description=(
-        "[Walmart] Refresh OpenAPI specs into the user cache, which then takes precedence over "
-        "the bundled copies. Call when the user asks for it, or when they report an endpoint "
-        "the bundled spec does not have — nothing else here signals that a spec is stale. "
-        "Omit api to refresh all 33. Rows report written, unchanged, or error."
-    ),
-    # Writes the user spec cache: an update, not a delete — re-running it
-    # against the same upstream state converges on the same cache, and an
-    # unchanged document is not rewritten at all.
-    annotations=ToolAnnotations(
-        read_only_hint=False,
-        destructive_hint=False,
-        idempotent_hint=True,
-        open_world_hint=True,
-    ),
-)
-async def refresh_specs(
-    api: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description=(
-                "Refresh only this api, e.g. "
-                "walmart:marketplace:order-management. The two auxiliary walmart:ads specs "
-                "are valid here. Src: platforms."
-            ),
-        ),
-    ] = None,
-) -> dict[str, Any]:
-    try:
-        results = await specs.refresh(api)
-    except SpecError as e:
-        return {"error": str(e)}
-    written = sum(1 for r in results if r.get("status") == "written")
-    unchanged = sum(1 for r in results if r.get("status") == "unchanged")
-    return {
-        "refreshed": written,
-        "unchanged": unchanged,
-        "total": len(results),
-        "results": results,
-    }
-
-
 # ── entry point ────────────────────────────────────────────────────────────────
 
 
+def _refresh_now() -> int:
+    """Sweep every spec now, ignoring the interval, and report what happened.
+
+    The manual lever that replaces the old tool: the user knows when a refresh is
+    worth doing -- they hit the missing endpoint -- and a schedule alone cannot
+    answer that until its next run.
+    """
+    # httpx logs every request at INFO; on a one-shot CLI that buries the report.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    rows = asyncio.run(specs.refresh_due(force=True))
+    if not rows:
+        print("another process is refreshing; nothing to do")
+        return 0
+    width = max(len(row["api"]) for row in rows) + 2
+    for row in rows:
+        detail = row.get("error") or f"{row.get('operations')} operations"
+        print(f"{row['api']:<{width}}{row['status']:<11}{detail}")
+    return 1 if any(row["status"] == "error" for row in rows) else 0
+
+
 def main() -> None:
+    if "--refresh" in sys.argv[1:]:
+        raise SystemExit(_refresh_now())
     mcp.run(transport="stdio")
 
 

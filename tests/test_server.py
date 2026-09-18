@@ -79,14 +79,13 @@ def _json_ok(payload: Any):
 
 
 @pytest.mark.asyncio
-async def test_exactly_five_tools_are_registered():
+async def test_exactly_four_tools_are_registered():
     names = {t.name for t in await server.mcp.list_tools()}
     assert names == {
         "list_endpoints",
         "describe_endpoint",
         "call_endpoint",
         "download_file",
-        "refresh_specs",
     }
 
 
@@ -127,7 +126,7 @@ async def test_the_passthrough_tool_takes_the_most_cautious_shape():
 @pytest.mark.asyncio
 async def test_writing_tools_are_idempotent_and_non_destructive():
     tools = {t.name: t for t in await server.mcp.list_tools()}
-    for name in ("download_file", "refresh_specs"):
+    for name in ("download_file",):
         annotations = tools[name].annotations
         assert annotations is not None
         assert annotations.read_only_hint is False
@@ -673,43 +672,6 @@ async def test_a_failed_download_reports_the_status_and_the_hops(
     assert "HTTP 404" in (result.error or "")
 
 
-# ── refresh_specs ─────────────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_refresh_reports_a_written_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from mcp_walmart_ads import specs
-
-    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
-    monkeypatch.setattr(
-        specs,
-        "fetch_spec",
-        lambda source, headers=None, timeout=30.0: {
-            "info": {"version": "1"},
-            "paths": {"/a": {"get": {}}},
-        },
-    )
-    result = await server.refresh_specs("walmart:ads:sponsored-products")
-    assert result == {
-        "refreshed": 1,
-        "unchanged": 0,
-        "total": 1,
-        "results": [
-            {
-                "api": "walmart:ads:sponsored-products",
-                "status": "written",
-                "version": "1",
-                "operations": 1,
-            }
-        ],
-    }
-
-
-@pytest.mark.asyncio
-async def test_refresh_of_an_unknown_api_is_reported_as_an_error():
-    assert "error" in await server.refresh_specs("walmart:marketplace:nope")
-
-
 # ── schema enums ──────────────────────────────────────────────────────────────
 
 
@@ -747,7 +709,7 @@ async def test_api_is_deliberately_not_enumerated():
     # 31 values on four tools would cost ~1,270 tokens to duplicate what
     # wmt://platforms/{platform}/apis returns; the lineage tag carries it instead.
     tools = {t.name: t for t in await server.mcp.list_tools()}
-    for tool in ("list_endpoints", "describe_endpoint", "call_endpoint", "refresh_specs"):
+    for tool in ("list_endpoints", "describe_endpoint", "call_endpoint"):
         prop = tools[tool].input_schema["properties"]["api"]
         assert "enum" not in json.dumps(prop)
         assert "Src: platforms." in prop["description"]

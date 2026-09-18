@@ -24,8 +24,8 @@ walmart:ads:sponsored-products:SBAProfileUpdateV2
 ```
 
 Spec-driven discovery (`list_endpoints`,
-`describe_endpoint`), a generic API proxy (`call_endpoint`), a downloader
-(`download_file`), and a runtime spec refresher (`refresh_specs`). The agent discovers
+`describe_endpoint`), a generic API proxy (`call_endpoint`), and a downloader
+(`download_file`). The agent discovers
 endpoints from bundled OpenAPI specs and calls them; the server handles signing, token
 acquisition, and header construction.
 
@@ -41,7 +41,7 @@ acquisition, and header construction.
   `samsclub:ads:sponsored-products`), so an agent can move what it knows across; the
   overlap is partial, 13 shared operation ids of 90
 - **Spec-driven discovery** — list/describe endpoints from 33 bundled OpenAPI specs,
-  refreshable at runtime; `describe_endpoint` returns an operation plus its full
+  refreshed in the background on a schedule; `describe_endpoint` returns an operation plus its full
   `components.schemas` closure and strips the headers the server owns
 - **Any endpoint** — call by operation id or raw method+path; raw paths reach
   alpha/beta/unpublished endpoints absent from the specs
@@ -225,6 +225,7 @@ fix needs a restart.
 |---|---|---|
 | `response_cache_ttl` | `3600` | Seconds a truncated body or download stays readable at its resource URI |
 | `truncate_threshold` | `2048` | Response bytes returned inline before truncating to a preview |
+| `spec_refresh` | `{"auto": true, "interval": 7}` | Background spec refresh: `auto` turns the sweep on or off, `interval` is days between sweeps (fractional allowed) |
 
 ### Market → tenant (`wap-tenant-id`)
 
@@ -286,21 +287,40 @@ asks for one instead. Redirects are followed, keeping auth headers on a relative
 same-host `Location` and dropping credentials cross-host; the result includes `urls`, the
 hop path. `platform` is required only when downloading from a bare `url`.
 
-### `refresh_specs`
+## Keeping specs current
 
-Re-fetch bundled specs into a user cache that then takes precedence over the bundled
-copies. Pass `api` to refresh one — e.g. `walmart:marketplace:order-management` — or omit
-to refresh all 33, the two auxiliary `walmart:ads` specs included.
+Specs refresh in the background: once when the server starts, then every
+`spec_refresh.interval` days (7 by default). Refreshed documents land in a user cache that
+takes precedence over the bundled copies.
 
-Deliberately user-driven: a stale spec is indistinguishable from a current one from
-inside a session — it simply lacks an endpoint — so the agent has no signal telling it
-when a refresh is worthwhile, while you do. Nothing refreshes unprompted; the bundled
-specs are the floor and a release ships current ones.
+```json
+{ "spec_refresh": { "auto": true, "interval": 7 } }
+```
+
+Set `auto` to `false` to stop the background sweep; `--refresh` below keeps working, and
+the interval is remembered for whenever you turn it back on.
+
+There is deliberately no tool for this. A stale spec is indistinguishable from a current
+one from inside a session — it simply lacks an endpoint — so an agent asked to decide
+would either never refresh or refresh superstitiously after an unrelated failure. The
+trigger belongs outside the session.
+
+To refresh right now, when you have hit an endpoint the bundled spec does not have:
+
+```bash
+uv run mcp-walmart-ads --refresh
+```
+
+That sweeps every spec regardless of the interval and prints one row per document.
 
 A document is written only once it yields an operation, so an upstream answering `200`
 with an error body cannot poison the cache, and a byte-identical document is left alone —
 each row reports `written`, `unchanged`, or `error`. A cached file that will not load
 falls back to the bundled copy and is discarded.
+
+Servers coordinate through `spec-state.json` at the cache root, which records when each
+spec was last tried and holds a lease so that one process sweeps at a time — every client
+session runs its own server process, and without it each would re-download all 33.
 
 ## MCP resources
 

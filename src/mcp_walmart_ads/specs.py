@@ -52,15 +52,22 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import tempfile
+import time
 from collections.abc import Iterator, Mapping
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import httpx
+from filelock import lock_descriptor, unlock_descriptor
 
 from .platforms import platform_for, platform_of
+
+logger = logging.getLogger(__name__)
 
 BUNDLE_DIR = Path(__file__).parent / "specs"
 REGISTRY_URL = "https://dash.readme.com/api/v1/api-registry/{uuid}"
@@ -210,6 +217,22 @@ API_IDS: tuple[str, ...] = tuple(m.spec_id for m in SPECS if m.in_surface)
 _BY_ID: dict[str, SpecMeta] = {m.spec_id: m for m in SPECS}
 
 _refresh_lock = asyncio.Lock()
+
+# One document's fetch, end to end. An httpx timeout is per socket operation, so
+# a slow-drip response never trips it; this is the bound that actually holds.
+FETCH_DEADLINE = 60.0
+
+# How long a sweeper's claim on the cache stays valid. It must outlast one
+# document's fetch, and it is renewed after each one, so a long sweep never
+# expires its own lease. A process that dies mid-sweep blocks the next one for
+# at most this long.
+LEASE_TTL = 300.0
+
+# How often to sweep when the config does not say. Days is the unit the config
+# speaks, because nobody reads 604800 as a week; seconds is what the loop needs.
+# Specs move on a release cadence, not an hourly one.
+DEFAULT_REFRESH_DAYS = 7.0
+DEFAULT_REFRESH_INTERVAL = DEFAULT_REFRESH_DAYS * 86400.0
 
 # Documentation-only OpenAPI keywords, size-limited on load.
 _PRUNED_KEYWORDS = frozenset({"example", "examples"})
@@ -398,24 +421,31 @@ def resolve_base_url(
     return base + meta.base_suffix
 
 
-def fetch_spec(
+async def fetch_spec(
     source: SpecSource,
     *,
     headers: dict[str, str] | None = None,
     timeout: float = 30.0,
+    deadline: float = FETCH_DEADLINE,
 ) -> dict[str, Any]:
     """Download a spec from its source.
 
     Unauthenticated GET by default. A :class:`UrlSource` with ``auth`` set
-    attaches the caller's signed ``WM_*``/Bearer ``headers``. Synchronous so the
-    network call can run off the event loop via ``asyncio.to_thread``.
+    attaches the caller's signed ``WM_*``/Bearer ``headers``.
+
+    ``timeout`` bounds each socket operation and ``deadline`` bounds the whole
+    fetch. Both are needed: a response delivered one slow byte at a time resets
+    the per-operation clock forever and would otherwise hang a sweep with no
+    bound at all. Async rather than threaded because a deadline over a worker
+    thread stops the waiting, not the request -- the thread would keep running.
     """
     needs_auth = isinstance(source, UrlSource) and source.auth
     request_headers = headers if (needs_auth and headers) else None
-    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-        response = client.get(source.url, headers=request_headers)
-        response.raise_for_status()
-        return response.json()
+    async with asyncio.timeout(deadline):
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.get(source.url, headers=request_headers)
+            response.raise_for_status()
+            return response.json()
 
 
 def write_spec(target: Path, spec: dict[str, Any]) -> bool:
@@ -429,15 +459,68 @@ def write_spec(target: Path, spec: dict[str, Any]) -> bool:
     than hashed because the bytes are right there, and it earns its keep beyond
     the saved write: :mod:`.discovery` keys its index on mtime, so rewriting an
     unchanged file makes every running server re-parse that spec for nothing.
+
+    The scratch file is unique per writer. A name derived only from the target
+    is shared by every process writing that document, and two interleaved
+    writers produce a file that is complete, corrupt, and installed atomically
+    -- worse than a partial one, because nothing downstream can detect it.
     """
     body = (json.dumps(spec, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
     if target.is_file() and target.read_bytes() == body:
         return False
     target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_name(target.name + ".tmp")
-    tmp.write_bytes(body)
-    os.replace(tmp, target)
+    fd, name = tempfile.mkstemp(dir=target.parent, prefix=f"{target.name}.", suffix=".tmp")
+    tmp = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(body)
+        os.replace(tmp, target)
+    except BaseException:
+        tmp.unlink(missing_ok=True)  # leave litter, never a trap
+        raise
     return True
+
+
+async def _refresh_one(
+    meta: SpecMeta,
+    *,
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Fetch, validate, and install one spec, reporting the outcome as a row.
+
+    The single write path. Both the explicit :func:`refresh` and the background
+    :func:`refresh_due` drive this, so the trust boundary below cannot be true
+    of one and not the other.
+
+    A fetched document is installed only once it yields an operation. The cache
+    outranks the bundle, so an upstream that answers ``200`` with something that
+    is not a spec -- an error body, a login page rendered as JSON -- would
+    otherwise degrade an api with no way back short of deleting the cache by
+    hand. Counting operations tests the property that matters, which is whether
+    the server still works after the write.
+    """
+    try:
+        spec = await fetch_spec(meta.source, headers=headers)
+        operations = sum(1 for _ in iter_operations(spec))
+        if operations == 0:
+            raise SpecError("fetched document declares no operations")
+        written = await asyncio.to_thread(write_spec, cache_path(meta), spec)
+    except (
+        httpx.HTTPError,
+        json.JSONDecodeError,
+        OSError,
+        SpecError,
+        TimeoutError,
+        ValueError,
+    ) as e:
+        return {"api": meta.spec_id, "status": "error", "error": str(e)}
+    info = spec.get("info") or {}
+    return {
+        "api": meta.spec_id,
+        "status": "written" if written else "unchanged",
+        "version": info.get("version"),
+        "operations": operations,
+    }
 
 
 async def refresh(
@@ -459,25 +542,211 @@ async def refresh(
     the server still works after the write.
     """
     metas = [meta_for(spec_id)] if spec_id is not None else list(SPECS)
-    results: list[dict[str, Any]] = []
     async with _refresh_lock:
-        for meta in metas:
-            try:
-                spec = await asyncio.to_thread(fetch_spec, meta.source, headers=headers)
-                operations = sum(1 for _ in iter_operations(spec))
-                if operations == 0:
-                    raise SpecError("fetched document declares no operations")
-                written = await asyncio.to_thread(write_spec, cache_path(meta), spec)
-            except (httpx.HTTPError, json.JSONDecodeError, OSError, SpecError, ValueError) as e:
-                results.append({"api": meta.spec_id, "status": "error", "error": str(e)})
-                continue
-            info = spec.get("info") or {}
-            results.append(
-                {
-                    "api": meta.spec_id,
-                    "status": "written" if written else "unchanged",
-                    "version": info.get("version"),
-                    "operations": operations,
-                }
-            )
-    return results
+        return [await _refresh_one(meta, headers=headers) for meta in metas]
+
+
+# ── refresh state ──────────────────────────────────────────────────────────────
+#
+# One file under the cache root is both the lock and the record. ``lock_descriptor``
+# locks a descriptor we opened ourselves and, unlike ``FileLock``, never opens,
+# truncates or unlinks the path -- ``FileLock``'s winner truncates the file it
+# locks, which would erase the state on every acquire.
+#
+# The state is rewritten in place rather than replaced. ``os.replace`` would swap
+# the inode out from under a held lock, splitting waiters across two inodes and
+# breaking the mutual exclusion the lock exists for. A crash mid-write can
+# therefore truncate it -- acceptable only because this file is derived data: it
+# reads back as empty and costs one extra sweep, while the specs themselves keep
+# their atomic install.
+
+
+def state_path() -> Path:
+    """The lease and per-spec refresh record, at the cache root."""
+    return cache_dir() / "spec-state.json"
+
+
+def _read_state(fd: int) -> dict[str, Any]:
+    """Parse the open state file, treating anything unusable as empty."""
+    os.lseek(fd, 0, os.SEEK_SET)
+    chunks: list[bytes] = []
+    while chunk := os.read(fd, 65536):
+        chunks.append(chunk)
+    try:
+        state = json.loads(b"".join(chunks))
+    except (UnicodeDecodeError, ValueError):
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def _write_state(fd: int, state: dict[str, Any]) -> None:
+    body = json.dumps(state, indent=2, sort_keys=True).encode("utf-8")
+    os.lseek(fd, 0, os.SEEK_SET)
+    os.ftruncate(fd, 0)
+    os.write(fd, body)
+    os.fsync(fd)
+
+
+@contextmanager
+def _locked_state() -> Iterator[tuple[int, dict[str, Any]]]:
+    """Hold the state file locked, yielding its descriptor and current contents.
+
+    Blocking, and deliberately short: the caller reads, decides, and writes, with
+    no network call inside. Where the filesystem cannot lock at all the sweep
+    still runs -- the cost is a duplicated download and a last-writer-wins
+    install of identical bytes, which is what the write path is built to absorb.
+    """
+    path = state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    locked = False
+    try:
+        try:
+            lock_descriptor(fd)
+            locked = True
+        except OSError as e:
+            logger.debug("refresh state lock unavailable (%s); continuing unlocked", e)
+        yield fd, _read_state(fd)
+    finally:
+        if locked:
+            with suppress(OSError):
+                unlock_descriptor(fd)
+        os.close(fd)
+
+
+def _spec_rows(state: dict[str, Any]) -> dict[str, Any]:
+    rows = state.get("specs")
+    return rows if isinstance(rows, dict) else {}
+
+
+def _attempted(state: dict[str, Any], spec_id: str) -> float | None:
+    """When this spec was last tried, or ``None`` if it never has been."""
+    row = _spec_rows(state).get(spec_id)
+    if isinstance(row, dict) and isinstance(row.get("attempted"), int | float):
+        return float(row["attempted"])
+    return None
+
+
+def _due(state: dict[str, Any], interval: float, now: float) -> list[SpecMeta]:
+    """Specs never attempted, or attempted longer ago than ``interval``.
+
+    Never-attempted is due outright rather than by arithmetic on a zero
+    timestamp: the two are different states, and conflating them makes the sweep
+    depend on how far the clock happens to sit from the epoch.
+    """
+    due = []
+    for meta in SPECS:
+        last = _attempted(state, meta.spec_id)
+        if last is None or now - last >= interval:
+            due.append(meta)
+    return due
+
+
+def _claim(interval: float, *, force: bool, now: float) -> list[SpecMeta]:
+    """Take the lease and return what to sweep, or nothing if another holds it."""
+    with _locked_state() as (fd, state):
+        if float(state.get("lease_expires") or 0.0) > now:
+            return []
+        due = list(SPECS) if force else _due(state, interval, now)
+        if not due:
+            return []
+        state["lease_expires"] = now + LEASE_TTL
+        _write_state(fd, state)
+        return due
+
+
+def _record(row: dict[str, Any], *, now: float, renew: bool) -> None:
+    """Write one spec's outcome and renew (or drop) the lease."""
+    with _locked_state() as (fd, state):
+        rows = _spec_rows(state)
+        entry: dict[str, Any] = {"attempted": now, "status": row["status"]}
+        for key in ("version", "operations", "error"):
+            if row.get(key) is not None:
+                entry[key] = row[key]
+        rows[row["api"]] = entry
+        state["specs"] = rows
+        state["lease_expires"] = (now + LEASE_TTL) if renew else 0.0
+        _write_state(fd, state)
+
+
+def _release() -> None:
+    with _locked_state() as (fd, state):
+        state["lease_expires"] = 0.0
+        _write_state(fd, state)
+
+
+async def refresh_due(
+    *,
+    interval: float = DEFAULT_REFRESH_INTERVAL,
+    force: bool = False,
+    headers: dict[str, str] | None = None,
+    now: float | None = None,
+) -> list[dict[str, Any]]:
+    """Sweep the specs whose last attempt is older than ``interval``.
+
+    Returns the same rows as :func:`refresh`, one per spec actually swept, and an
+    empty list when nothing is due or another process holds the lease.
+
+    The lease is what keeps one sweeper at a time across processes -- the server
+    runs one per client session, so without it every session would re-download
+    the same 33 documents. It is taken and renewed under the lock, and every
+    fetch happens outside it: a caller must never wait on someone else's
+    download.
+
+    An attempt is recorded whether it succeeded or failed, so an upstream that is
+    down is retried at the next interval rather than on every tick.
+    """
+    started = time.time() if now is None else now
+    async with _refresh_lock:
+        due = await asyncio.to_thread(_claim, interval, force=force, now=started)
+        if not due:
+            return []
+        rows: list[dict[str, Any]] = []
+        try:
+            for index, meta in enumerate(due):
+                row = await _refresh_one(meta, headers=headers)
+                rows.append(row)
+                await asyncio.to_thread(
+                    _record,
+                    row,
+                    now=time.time() if now is None else now,
+                    renew=index < len(due) - 1,
+                )
+        except asyncio.CancelledError:
+            # Drop the lease rather than make the next process wait out its TTL.
+            with suppress(OSError):
+                await asyncio.to_thread(_release)
+            raise
+        return rows
+
+
+async def refresh_loop(
+    interval: float = DEFAULT_REFRESH_INTERVAL,
+    *,
+    headers: dict[str, str] | None = None,
+) -> None:
+    """Sweep at startup, then every ``interval`` seconds, until cancelled.
+
+    Never lets a refresh failure reach the server: a background task that dies on
+    a bad network is worse than one that logs and waits for the next tick.
+    """
+    while True:
+        try:
+            rows = await refresh_due(interval=interval, headers=headers)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 -- a sweep must never take the server down
+            logger.exception("spec refresh sweep failed")
+        else:
+            if rows:
+                errors = [r for r in rows if r["status"] == "error"]
+                logger.info(
+                    "refreshed %d spec(s): %d written, %d unchanged, %d error",
+                    len(rows),
+                    sum(1 for r in rows if r["status"] == "written"),
+                    sum(1 for r in rows if r["status"] == "unchanged"),
+                    len(errors),
+                )
+                for row in errors:
+                    logger.warning("spec %s: %s", row["api"], row["error"])
+        await asyncio.sleep(interval)

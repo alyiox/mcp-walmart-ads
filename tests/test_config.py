@@ -131,6 +131,44 @@ def test_thresholds_default_and_override(write_config):
     assert (cfg.truncate_threshold, cfg.response_cache_ttl) == (4096, 60)
 
 
+def test_spec_refresh_defaults_to_a_weekly_sweep(write_config):
+    policy = load_config(write_config(raw_config())).spec_refresh
+    assert (policy.auto, policy.interval_days) == (True, 7.0)
+    assert policy.interval_seconds == 604800.0
+
+
+def test_spec_refresh_accepts_a_fractional_interval(write_config):
+    # Days, so a sub-day cadence stays expressible: 0.5 is twelve hours.
+    data = raw_config() | {"spec_refresh": {"interval": 0.5}}
+    policy = load_config(write_config(data)).spec_refresh
+    assert (policy.auto, policy.interval_seconds) == (True, 43200.0)
+
+
+def test_turning_auto_off_keeps_the_interval(write_config):
+    # The switch and the cadence are separate fields precisely so that disabling
+    # the sweep does not throw away how often it used to run.
+    data = raw_config() | {"spec_refresh": {"auto": False, "interval": 3}}
+    policy = load_config(write_config(data)).spec_refresh
+    assert (policy.auto, policy.interval_days) == (False, 3.0)
+
+
+@pytest.mark.parametrize(
+    ("block", "message"),
+    [
+        ({"interval": 0}, "greater than 0"),
+        ({"interval": -1}, "greater than 0"),
+        ({"interval": "weekly"}, "number of days"),
+        ({"auto": "yes"}, "true or false"),
+        ({"nope": 1}, "unknown field"),
+        ("weekly", "must be an object"),
+    ],
+)
+def test_a_bad_spec_refresh_block_fails_the_file(write_config, block, message):
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(write_config(raw_config() | {"spec_refresh": block}))
+    assert message in str(excinfo.value)
+
+
 # ── file-level failures ───────────────────────────────────────────────────────
 
 

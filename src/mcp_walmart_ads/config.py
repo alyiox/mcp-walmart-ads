@@ -65,7 +65,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from .platforms import OAUTH2, PLATFORM_IDS, platform_for
-from .specs import SPEC_IDS, SPECS
+from .specs import DEFAULT_REFRESH_DAYS, SPEC_IDS, SPECS
 
 CONFIG_DIR = Path.home() / ".config" / "mcp-walmart-ads"
 CONFIG_PATH = CONFIG_DIR / "config.json"
@@ -192,6 +192,29 @@ EnvConfig = SignatureEnv | OAuth2Env
 
 
 @dataclass(frozen=True)
+class SpecRefresh:
+    """Whether specs refresh on their own, and how often.
+
+    Two fields rather than one, because "off" and "how often" are different
+    questions: a single interval with ``0`` meaning disabled would lose the
+    cadence the moment someone turned it off, and would make a typo of ``0``
+    indistinguishable from a decision. ``auto=False`` stops the background sweep
+    and leaves ``mcp-walmart-ads --refresh`` working, which is the only way to
+    refresh that was ever the user's to trigger.
+    """
+
+    auto: bool
+    interval_days: float
+
+    @property
+    def interval_seconds(self) -> float:
+        return self.interval_days * 86400.0
+
+
+DEFAULT_SPEC_REFRESH = SpecRefresh(auto=True, interval_days=DEFAULT_REFRESH_DAYS)
+
+
+@dataclass(frozen=True)
 class Config:
     """Loaded config: per-platform environments, and everything that went wrong.
 
@@ -205,6 +228,7 @@ class Config:
     platforms: CaseInsensitiveDict[CaseInsensitiveDict[CaseInsensitiveDict[EnvConfig]]]
     response_cache_ttl: int
     truncate_threshold: int
+    spec_refresh: SpecRefresh
     platform_errors: dict[str, list[str]] = field(default_factory=dict)
     platform_sources: dict[str, str] = field(default_factory=dict)
     file_errors: dict[str, str] = field(default_factory=dict)
@@ -699,8 +723,14 @@ def load_config(path: Path | None = None) -> Config:
 
     ttl = _positive_int(raw, "response_cache_ttl", 3600, top_errors)
     threshold = _positive_int(raw, "truncate_threshold", 2048, top_errors)
+    spec_refresh = _spec_refresh(raw, top_errors)
 
-    unknown = set(raw) - {"platforms", "response_cache_ttl", "truncate_threshold"}
+    unknown = set(raw) - {
+        "platforms",
+        "response_cache_ttl",
+        "truncate_threshold",
+        "spec_refresh",
+    }
     if unknown:
         top_errors.append(f"unknown top-level field(s) {', '.join(sorted(unknown))}")
 
@@ -718,6 +748,7 @@ def load_config(path: Path | None = None) -> Config:
         platforms=platforms,
         response_cache_ttl=ttl,
         truncate_threshold=threshold,
+        spec_refresh=spec_refresh,
         platform_errors=platform_errors,
         platform_sources=platform_sources,
         file_errors=file_errors,
@@ -780,6 +811,38 @@ def _merge_platforms(
         platform_sources[platform] = str(source)
         if errors:
             platform_errors[platform] = errors
+
+
+def _spec_refresh(raw: dict[str, Any], errors: list[str]) -> SpecRefresh:
+    """Read the ``spec_refresh`` block, in days.
+
+    Days because nobody reads ``604800`` as a week, and fractional because a
+    sub-day cadence stays expressible (``0.5`` is twelve hours). A non-positive
+    interval is an error rather than a second way to say ``auto: false``.
+    """
+    block = raw.get("spec_refresh", {})
+    if not isinstance(block, dict):
+        errors.append("spec_refresh: must be an object")
+        return DEFAULT_SPEC_REFRESH
+
+    unknown = set(block) - {"auto", "interval"}
+    if unknown:
+        errors.append(f"spec_refresh: unknown field(s) {', '.join(sorted(unknown))}")
+
+    auto = block.get("auto", DEFAULT_SPEC_REFRESH.auto)
+    if not isinstance(auto, bool):
+        errors.append("spec_refresh.auto: must be true or false")
+        auto = DEFAULT_SPEC_REFRESH.auto
+
+    interval = block.get("interval", DEFAULT_SPEC_REFRESH.interval_days)
+    if isinstance(interval, bool) or not isinstance(interval, int | float):
+        errors.append("spec_refresh.interval: must be a number of days")
+        interval = DEFAULT_SPEC_REFRESH.interval_days
+    elif interval <= 0:
+        errors.append("spec_refresh.interval: must be greater than 0 (use auto: false to disable)")
+        interval = DEFAULT_SPEC_REFRESH.interval_days
+
+    return SpecRefresh(auto=auto, interval_days=float(interval))
 
 
 def _positive_int(raw: dict[str, Any], key: str, default: int, errors: list[str]) -> int:
