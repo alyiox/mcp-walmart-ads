@@ -233,7 +233,7 @@ async def test_refresh_writes_the_cache(tmp_path: Path, monkeypatch: pytest.Monk
         lambda source, headers=None, timeout=30.0: {
             "openapi": "3.0.0",
             "info": {"version": "9.9"},
-            "paths": {"/a": {}},
+            "paths": {"/a": {"get": {"operationId": "a"}}},
         },
     )
     rows = await specs.refresh("walmart:ads:sponsored-products")
@@ -242,7 +242,7 @@ async def test_refresh_writes_the_cache(tmp_path: Path, monkeypatch: pytest.Monk
             "api": "walmart:ads:sponsored-products",
             "status": "written",
             "version": "9.9",
-            "paths": 1,
+            "operations": 1,
             "cached_at": str(tmp_path / "walmart" / "ads" / "sponsored-products.openapi.json"),
         }
     ]
@@ -258,7 +258,7 @@ async def test_refresh_reports_per_spec_errors_without_aborting(
     def flaky(source, headers=None, timeout=30.0):
         if isinstance(source, UrlSource):
             raise httpx.ConnectError("boom")
-        return {"openapi": "3.0.0", "info": {}, "paths": {}}
+        return {"openapi": "3.0.0", "info": {}, "paths": {"/a": {"get": {}}}}
 
     monkeypatch.setattr(specs, "fetch_spec", flaky)
     rows = await specs.refresh()
@@ -272,6 +272,27 @@ async def test_refresh_reports_per_spec_errors_without_aborting(
 async def test_refresh_of_an_unknown_api_raises():
     with pytest.raises(SpecError):
         await specs.refresh("walmart:marketplace:nope")
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        pytest.param({"message": "Not Found"}, id="error body served as 200"),
+        pytest.param({"openapi": "3.0.0", "paths": {}}, id="no paths"),
+        pytest.param({"openapi": "3.0.0", "paths": {"/a": {"summary": "x"}}}, id="no methods"),
+        pytest.param([{"openapi": "3.0.0"}], id="not an object"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_refresh_refuses_a_document_with_no_operations(
+    document: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(specs, "fetch_spec", lambda source, headers=None, timeout=30.0: document)
+    rows = await specs.refresh("walmart:ads:sponsored-products")
+    assert rows[0]["status"] == "error"
+    assert "no operations" in rows[0]["error"]
+    assert list(tmp_path.rglob("*.json")) == []
 
 
 def test_write_spec_is_atomic_and_compact(tmp_path: Path):

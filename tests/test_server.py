@@ -684,7 +684,10 @@ async def test_refresh_reports_a_written_count(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setattr(
         specs,
         "fetch_spec",
-        lambda source, headers=None, timeout=30.0: {"info": {"version": "1"}, "paths": {}},
+        lambda source, headers=None, timeout=30.0: {
+            "info": {"version": "1"},
+            "paths": {"/a": {"get": {}}},
+        },
     )
     result = await server.refresh_specs("walmart:ads:sponsored-products")
     assert result == {
@@ -695,7 +698,7 @@ async def test_refresh_reports_a_written_count(tmp_path: Path, monkeypatch: pyte
                 "api": "walmart:ads:sponsored-products",
                 "status": "written",
                 "version": "1",
-                "paths": 0,
+                "operations": 1,
                 "cached_at": str(tmp_path / "walmart" / "ads" / "sponsored-products.openapi.json"),
             }
         ],

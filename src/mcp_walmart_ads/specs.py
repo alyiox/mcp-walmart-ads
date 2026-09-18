@@ -414,6 +414,13 @@ async def refresh(
 
     Per-spec errors are reported in the result row rather than aborting the
     batch. Returns one row per spec with ``status`` ``written``/``error``.
+
+    A fetched document is written only once it yields an operation. The cache
+    outranks the bundle, so an upstream that answers ``200`` with something that
+    is not a spec -- an error body, a login page rendered as JSON -- would
+    otherwise degrade an api with no way back short of deleting the cache by
+    hand. Counting operations tests the property that matters, which is whether
+    the server still works after the write.
     """
     metas = [meta_for(spec_id)] if spec_id is not None else list(SPECS)
     results: list[dict[str, Any]] = []
@@ -421,8 +428,11 @@ async def refresh(
         for meta in metas:
             try:
                 spec = await asyncio.to_thread(fetch_spec, meta.source, headers=headers)
+                operations = sum(1 for _ in iter_operations(spec))
+                if operations == 0:
+                    raise SpecError("fetched document declares no operations")
                 await asyncio.to_thread(write_spec, cache_path(meta), spec)
-            except (httpx.HTTPError, json.JSONDecodeError, OSError, ValueError) as e:
+            except (httpx.HTTPError, json.JSONDecodeError, OSError, SpecError, ValueError) as e:
                 results.append({"api": meta.spec_id, "status": "error", "error": str(e)})
                 continue
             info = spec.get("info") or {}
@@ -431,7 +441,7 @@ async def refresh(
                     "api": meta.spec_id,
                     "status": "written",
                     "version": info.get("version"),
-                    "paths": len(spec.get("paths") or {}),
+                    "operations": operations,
                     "cached_at": str(cache_path(meta)),
                 }
             )
