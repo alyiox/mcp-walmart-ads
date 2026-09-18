@@ -8,7 +8,6 @@
 <!-- mcp-name: io.github.alyiox/mcp-walmart-ads -->
 
 MCP server for three Walmart Inc. API families, behind one tool surface:
-MCP server for three Walmart Inc. API families, behind one tool surface:
 
 | Platform | APIs | Auth |
 |---|---|---|
@@ -16,10 +15,9 @@ MCP server for three Walmart Inc. API families, behind one tool surface:
 | `walmart:marketplace` — [Walmart Marketplace](https://developer.walmart.com/home/us-mp) | 28 domains (orders, items, feeds, reports, …) | OAuth2 `client_credentials` |
 | `samsclub:ads` — [Sam's Club](https://developer.samsclub.com) | Sponsored Products | RSA-SHA256 signature + bearer token |
 
-Four tools reach 31 apis and 424 operations: discovery (`list_endpoints`,
-`describe_endpoint`), a generic proxy (`call_endpoint`), and a downloader
-(`download_file`). An agent finds endpoints in the bundled OpenAPI specs and calls them;
-the server signs, acquires tokens, and builds headers.
+Four tools over 31 apis and 424 operations — discovery, a generic proxy, and a
+downloader. An agent finds endpoints in the bundled OpenAPI specs and calls them; the
+server signs, acquires tokens, and builds headers.
 
 ```
 walmart:ads:sponsored-products:SBAProfileUpdateV2
@@ -27,11 +25,8 @@ walmart:ads:sponsored-products:SBAProfileUpdateV2
    └────────── platform ─────────┘  credentials attach here
 ```
 
-Ids carry the routing. Credentials attach at the two-segment platform prefix, so an
-operation id alone resolves to a host and an auth model without the caller naming either.
-Apis whose `<line>:<name>` suffix matches cover the same surface for different retailers
-— `walmart:ads:sponsored-products` and `samsclub:ads:sponsored-products` — so an agent
-moves what it knows across, though the overlap is partial: 13 shared operation ids of 90.
+An operation id alone resolves to a host and an auth model. A matching `<line>:<name>`
+suffix means the same surface for another retailer — 13 shared operation ids of 90.
 
 ## Requirements
 
@@ -312,7 +307,8 @@ its own server process, and without it each would re-download all 33.
 
 ## MCP host examples
 
-### Cursor
+<details>
+<summary><b>Cursor</b></summary>
 
 Add to `.cursor/mcp.json`:
 
@@ -327,7 +323,10 @@ Add to `.cursor/mcp.json`:
 }
 ```
 
-### Claude Code
+</details>
+
+<details>
+<summary><b>Claude Code</b></summary>
 
 Add to your Claude Code MCP config:
 
@@ -342,7 +341,10 @@ Add to your Claude Code MCP config:
 }
 ```
 
-### Codex
+</details>
+
+<details>
+<summary><b>Codex</b></summary>
 
 ```toml
 [mcp_servers.walmart]
@@ -350,7 +352,10 @@ command = "uvx"
 args = ["mcp-walmart-ads"]
 ```
 
-### OpenCode
+</details>
+
+<details>
+<summary><b>OpenCode</b></summary>
 
 ```json
 {
@@ -365,7 +370,10 @@ args = ["mcp-walmart-ads"]
 }
 ```
 
-### GitHub Copilot
+</details>
+
+<details>
+<summary><b>GitHub Copilot</b></summary>
 
 ```json
 {
@@ -379,6 +387,8 @@ args = ["mcp-walmart-ads"]
   }
 }
 ```
+
+</details>
 
 ## Where the specs come from
 
@@ -420,4 +430,4 @@ Issues and pull requests are welcome. Keep changes focused; `ruff check`,
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[LICENSE](MIT).
