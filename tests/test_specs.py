@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import httpx
@@ -297,9 +298,36 @@ async def test_refresh_refuses_a_document_with_no_operations(
 
 def test_write_spec_is_atomic_and_compact(tmp_path: Path):
     target = tmp_path / "nested" / "x.json"
-    specs.write_spec(target, {"a": 1, "b": "é"})
+    assert specs.write_spec(target, {"a": 1, "b": "é"}) is True
     assert target.read_text(encoding="utf-8") == '{"a":1,"b":"é"}\n'
     assert list(tmp_path.rglob("*.tmp")) == []
+
+
+def test_write_spec_leaves_an_identical_file_alone(tmp_path: Path):
+    target = tmp_path / "x.json"
+    specs.write_spec(target, {"a": 1})
+    os.utime(target, (0, 0))
+
+    assert specs.write_spec(target, {"a": 1}) is False
+    assert target.stat().st_mtime == 0
+
+    assert specs.write_spec(target, {"a": 2}) is True
+    assert target.stat().st_mtime != 0
+
+
+@pytest.mark.asyncio
+async def test_refresh_reports_an_unchanged_spec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        specs,
+        "fetch_spec",
+        lambda source, headers=None, timeout=30.0: {
+            "info": {"version": "1"},
+            "paths": {"/a": {"get": {}}},
+        },
+    )
+    assert (await specs.refresh("walmart:ads:display"))[0]["status"] == "written"
+    assert (await specs.refresh("walmart:ads:display"))[0]["status"] == "unchanged"
 
 
 def test_spec_meta_defaults_are_surface_and_no_suffix():

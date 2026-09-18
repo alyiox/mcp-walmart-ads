@@ -45,11 +45,12 @@ def main(argv: list[str]) -> int:
     for meta in metas:
         spec = fetch_spec(meta.source)
         target = bundled_path(meta)
-        write_spec(target, spec)
+        changed = write_spec(target, spec)
         size = target.stat().st_size
         total += size
         paths = len(spec.get("paths") or {})
-        print(f"{meta.spec_id:<44}{size / 1024:>8.0f} KB  {paths:>3} paths")
+        mark = "" if changed else "  (unchanged)"
+        print(f"{meta.spec_id:<44}{size / 1024:>8.0f} KB  {paths:>3} paths{mark}")
 
     print(f"\n{len(metas)} specs, {total / 1024 / 1024:.1f} MB bundled")
     return 0

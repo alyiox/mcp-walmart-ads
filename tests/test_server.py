@@ -692,6 +692,7 @@ async def test_refresh_reports_a_written_count(tmp_path: Path, monkeypatch: pyte
     result = await server.refresh_specs("walmart:ads:sponsored-products")
     assert result == {
         "refreshed": 1,
+        "unchanged": 0,
         "total": 1,
         "results": [
             {

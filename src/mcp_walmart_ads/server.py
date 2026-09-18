@@ -932,7 +932,13 @@ async def refresh_specs(
     except SpecError as e:
         return {"error": str(e)}
     written = sum(1 for r in results if r.get("status") == "written")
-    return {"refreshed": written, "total": len(results), "results": results}
+    unchanged = sum(1 for r in results if r.get("status") == "unchanged")
+    return {
+        "refreshed": written,
+        "unchanged": unchanged,
+        "total": len(results),
+        "results": results,
+    }
 
 
 # ── entry point ────────────────────────────────────────────────────────────────

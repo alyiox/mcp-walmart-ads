@@ -391,18 +391,26 @@ def fetch_spec(
         return response.json()
 
 
-def write_spec(target: Path, spec: dict[str, Any]) -> None:
-    """Atomically write a spec verbatim (reader never sees a partial file).
+def write_spec(target: Path, spec: dict[str, Any]) -> bool:
+    """Atomically write a spec verbatim, returning whether anything changed.
 
     Stored unpruned -- the file is the source of truth, and :func:`load_spec`
     applies the reduction. Serialized compactly because these files are machine
     input, and indenting 33 documents costs more bytes than any stripping saves.
+
+    A byte-identical document is not rewritten. The comparison is exact rather
+    than hashed because the bytes are right there, and it earns its keep beyond
+    the saved write: :mod:`.discovery` keys its index on mtime, so rewriting an
+    unchanged file makes every running server re-parse that spec for nothing.
     """
+    body = (json.dumps(spec, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
+    if target.is_file() and target.read_bytes() == body:
+        return False
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(target.name + ".tmp")
-    body = json.dumps(spec, separators=(",", ":"), ensure_ascii=False) + "\n"
-    tmp.write_text(body, encoding="utf-8")
+    tmp.write_bytes(body)
     os.replace(tmp, target)
+    return True
 
 
 async def refresh(
@@ -413,7 +421,8 @@ async def refresh(
     """Re-fetch one spec (by id) or all, writing each to the user cache.
 
     Per-spec errors are reported in the result row rather than aborting the
-    batch. Returns one row per spec with ``status`` ``written``/``error``.
+    batch. Returns one row per spec with ``status`` ``written``, ``unchanged``,
+    or ``error``.
 
     A fetched document is written only once it yields an operation. The cache
     outranks the bundle, so an upstream that answers ``200`` with something that
@@ -431,7 +440,7 @@ async def refresh(
                 operations = sum(1 for _ in iter_operations(spec))
                 if operations == 0:
                     raise SpecError("fetched document declares no operations")
-                await asyncio.to_thread(write_spec, cache_path(meta), spec)
+                written = await asyncio.to_thread(write_spec, cache_path(meta), spec)
             except (httpx.HTTPError, json.JSONDecodeError, OSError, SpecError, ValueError) as e:
                 results.append({"api": meta.spec_id, "status": "error", "error": str(e)})
                 continue
@@ -439,7 +448,7 @@ async def refresh(
             results.append(
                 {
                     "api": meta.spec_id,
-                    "status": "written",
+                    "status": "written" if written else "unchanged",
                     "version": info.get("version"),
                     "operations": operations,
                     "cached_at": str(cache_path(meta)),
