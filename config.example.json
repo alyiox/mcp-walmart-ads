@@ -1,6 +1,7 @@
 {
   "response_cache_ttl": 3600,
   "truncate_threshold": 2048,
+  "spec_refresh": { "auto": true, "interval": 7 },
   "platforms": {
     "walmart:ads": {
       "regions": {

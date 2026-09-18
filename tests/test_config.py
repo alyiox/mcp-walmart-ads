@@ -8,6 +8,8 @@ import pytest
 
 from mcp_walmart_ads.config import (
     _MAX_REPORTED_ERRORS,
+    DEFAULT_SPEC_REFRESH,
+    TOP_LEVEL_FIELDS,
     CaseInsensitiveDict,
     ConfigError,
     OAuth2Env,
@@ -129,6 +131,25 @@ def test_thresholds_default_and_override(write_config):
     data = raw_config() | {"truncate_threshold": 4096, "response_cache_ttl": 60}
     cfg = load_config(write_config(data))
     assert (cfg.truncate_threshold, cfg.response_cache_ttl) == (4096, 60)
+
+
+def test_the_example_config_parses():
+    """The file every config error points a reader to must actually load."""
+    cfg = load_config(Path(__file__).resolve().parent.parent / "config.example.json")
+    assert cfg.platforms
+    assert cfg.spec_refresh == DEFAULT_SPEC_REFRESH
+
+
+def test_the_example_config_documents_every_top_level_option():
+    """An option absent from the example is an option nobody discovers.
+
+    Optional fields still parse when missing, so a validity check alone would
+    not catch one that was added to the parser and never written down here.
+    """
+    example = json.loads(
+        (Path(__file__).resolve().parent.parent / "config.example.json").read_text()
+    )
+    assert set(example) == TOP_LEVEL_FIELDS
 
 
 def test_spec_refresh_defaults_to_a_weekly_sweep(write_config):

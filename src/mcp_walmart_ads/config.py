@@ -213,6 +213,13 @@ class SpecRefresh:
 
 DEFAULT_SPEC_REFRESH = SpecRefresh(auto=True, interval_days=DEFAULT_REFRESH_DAYS)
 
+# Every key config.json accepts at the top level. Named once so the unknown-field
+# check and the test that config.example.json documents them all read the same
+# list; a drop-in config.d/*.json may declare only "platforms".
+TOP_LEVEL_FIELDS = frozenset(
+    {"platforms", "response_cache_ttl", "truncate_threshold", "spec_refresh"}
+)
+
 
 @dataclass(frozen=True)
 class Config:
@@ -725,12 +732,7 @@ def load_config(path: Path | None = None) -> Config:
     threshold = _positive_int(raw, "truncate_threshold", 2048, top_errors)
     spec_refresh = _spec_refresh(raw, top_errors)
 
-    unknown = set(raw) - {
-        "platforms",
-        "response_cache_ttl",
-        "truncate_threshold",
-        "spec_refresh",
-    }
+    unknown = set(raw) - TOP_LEVEL_FIELDS
     if unknown:
         top_errors.append(f"unknown top-level field(s) {', '.join(sorted(unknown))}")
 
