@@ -264,12 +264,31 @@ and cached, and the result carries `cached_at` — a binary payload with no `des
 for one instead. Redirects are followed, keeping auth headers on a relative or same-host
 `Location` and dropping credentials cross-host; the result includes `urls`, the hop path.
 
-## Keeping specs current
+## Specs
+
+33 OpenAPI documents ship in the wheel. A refresh writes updated copies to
+`~/.cache/mcp-walmart-ads/specs/`, which outranks the bundle on read. The bundle is never
+written at runtime, so it stays the floor a damaged or missing cache falls back to.
+
+### Where they come from
+
+Walmart publishes no OpenAPI files, but each ReadMe reference page hydrates its HTML with
+the registry UUIDs of its documents, and `https://dash.readme.com/api/v1/api-registry/<uuid>`
+serves the full spec unauthenticated. That covers Walmart Connect and all 28 Marketplace
+domains. Sam's Club publishes neither, so its spec is hand-authored from the developer
+docs: `scripts/build_samsclub_spec.py` regenerates a *candidate* from those docs, and the
+scheduled `spec drift` workflow opens a PR when they change, as a human review gate. The
+candidate is never shipped and never loaded at runtime.
+
+Documents are stored verbatim as upstream served them, so a refresh diff shows exactly
+what changed. Oversized inline examples and `x-readme` metadata are stripped on load
+rather than on disk, which keeps that reduction retunable without re-downloading anything.
+
+### Keeping them current
 
 Specs refresh in the background: once at startup, then every `spec_refresh.interval` days
-(7 by default). Refreshed documents land in a user cache that outranks the bundled copies.
-Set `auto` to `false` to stop the sweep — the interval is remembered for whenever you turn
-it back on, and the manual refresh below keeps working.
+(7 by default). Set `auto` to `false` to stop the sweep — the interval is remembered for
+whenever you turn it back on, and the manual refresh still works.
 
 To refresh now, having hit an endpoint the bundled spec does not have:
 
@@ -288,10 +307,23 @@ trigger belongs outside the session.
 A document MUST yield at least one operation before it is installed, so an upstream
 answering `200` with an error body cannot poison the cache, and a byte-identical document
 is left alone. A cached file that will not load is discarded and the read falls back to
-the bundled copy, which is never written at runtime and is therefore the floor. Servers
-coordinate through `spec-state.json` at the cache root, which records when each spec was
-last tried and holds a lease so one process sweeps at a time — every client session runs
-its own server process, and without it each would re-download all 33.
+the bundle. Servers coordinate through `spec-state.json` at the cache root, which records
+when each spec was last tried and holds a lease so one process sweeps at a time — every
+client session runs its own server process, and without it each would re-download all 33.
+
+### Rebuilding the bundle
+
+A maintainer step, and not the same thing as `--refresh`: that updates your cache, this
+updates the copies that ship in the wheel.
+
+```bash
+# Registry-sourced specs only, by default
+uv run python scripts/fetch_specs.py
+uv run python scripts/fetch_specs.py walmart:ads:sponsored-products walmart:marketplace:order-management
+
+# Regenerate the Sam's Club candidate spec for review
+uv run --group spec-build python scripts/build_samsclub_spec.py
+```
 
 ## MCP resources
 
@@ -389,29 +421,6 @@ args = ["mcp-walmart-ads"]
 ```
 
 </details>
-
-## Where the specs come from
-
-Walmart publishes no OpenAPI files, but each ReadMe reference page hydrates its HTML with
-the registry UUIDs of its documents, and `https://dash.readme.com/api/v1/api-registry/<uuid>`
-serves the full spec unauthenticated. That covers Walmart Connect and all 28 Marketplace
-domains. Sam's Club publishes neither, so its spec is hand-authored from the developer
-docs: `scripts/build_samsclub_spec.py` regenerates a *candidate* from those docs, and the
-scheduled `spec drift` workflow opens a PR when they change, as a human review gate. The
-candidate is never shipped and never loaded at runtime.
-
-Specs are stored verbatim as upstream served them, so a refresh diff shows exactly what
-changed. Oversized inline examples and `x-readme` metadata are stripped on load rather
-than on disk, which keeps that reduction retunable without re-downloading anything.
-
-```bash
-# Rebuild the bundled specs (registry-sourced only, by default)
-uv run python scripts/fetch_specs.py
-uv run python scripts/fetch_specs.py walmart:ads:sponsored-products walmart:marketplace:order-management
-
-# Regenerate the Sam's Club candidate spec for review
-uv run --group spec-build python scripts/build_samsclub_spec.py
-```
 
 ## Development
 
