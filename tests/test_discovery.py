@@ -19,6 +19,21 @@ def test_every_surface_api_indexes_at_least_one_operation():
     assert all(count > 0 for count in counts.values())
 
 
+def test_a_damaged_cached_spec_does_not_take_its_api_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The listing asks only whether a file exists, so an unreadable one used to
+    leave the api advertised and every read of it raising."""
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    discovery._cache.pop("walmart:ads:display", None)
+    damaged = tmp_path / "walmart" / "ads" / "display.openapi.json"
+    damaged.parent.mkdir(parents=True)
+    damaged.write_text("{not json")
+
+    assert "walmart:ads:display" in discovery.apis_for("walmart:ads")
+    assert discovery.api_detail("walmart:ads:display")["operations"] > 0
+
+
 def test_apis_are_listed_per_platform_as_qualified_ids():
     assert discovery.apis_for("walmart:ads") == [
         "walmart:ads:sponsored-products",

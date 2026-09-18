@@ -310,7 +310,11 @@ def cache_path(meta: SpecMeta) -> Path:
 
 
 def spec_path(spec_id: str) -> Path:
-    """Resolve the file a spec loads from, cache taking precedence."""
+    """Resolve the file a spec loads from, cache taking precedence.
+
+    Existence only -- whether the contents load is :func:`load_spec`'s question,
+    and a cached file it rejects is gone by the time this is asked again.
+    """
     meta = meta_for(spec_id)
     for path in (cache_path(meta), bundled_path(meta)):
         if path.is_file():
@@ -319,15 +323,38 @@ def spec_path(spec_id: str) -> Path:
 
 
 def load_spec(spec_id: str) -> dict[str, Any]:
-    """Load a spec, preferring the cached (refreshed) copy over the bundle."""
-    path = spec_path(spec_id)
-    try:
-        spec = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        raise SpecError(f"spec {spec_id!r} at {path} is not valid JSON: {e}") from e
-    if not isinstance(spec, dict):
-        raise SpecError(f"spec {spec_id!r} at {path} is not a JSON object")
-    return prune_spec(spec)
+    """Load a spec, preferring the cached (refreshed) copy over the bundle.
+
+    A cached copy that will not load falls through to the bundled one and is
+    deleted. The cache is derived data and the bundle is the floor, so a damaged
+    file is worth far less than the api it would otherwise take out: it left the
+    api listed -- :func:`spec_path` asks only whether a file exists -- while
+    every read of it raised, recoverable only by clearing the cache by hand.
+    Deleting is what makes that self-correcting; the next refresh rewrites it.
+
+    Raises only when nothing loads, which means the bundled copy is damaged too.
+    """
+    meta = meta_for(spec_id)
+    problems: list[str] = []
+    for path in (cache_path(meta), bundled_path(meta)):
+        if not path.is_file():
+            continue
+        try:
+            spec = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            problems.append(f"{path} is not valid JSON: {e}")
+        else:
+            if isinstance(spec, dict):
+                return prune_spec(spec)
+            problems.append(f"{path} is not a JSON object")
+        if path != bundled_path(meta):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass  # best effort: a cache we cannot delete still falls back
+    if problems:
+        raise SpecError(f"spec {spec_id!r} could not be loaded: {'; '.join(problems)}")
+    raise SpecError(f"no spec file found for {spec_id!r}")
 
 
 def check_environment(spec_id: str, environment: str) -> SpecMeta:

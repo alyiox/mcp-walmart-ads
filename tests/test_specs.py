@@ -164,13 +164,37 @@ def test_missing_spec_file_raises():
 
 
 def test_malformed_spec_file_names_the_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """With no bundled copy behind it, an unreadable file is still an error."""
     monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(specs, "BUNDLE_DIR", tmp_path / "empty")
     target = tmp_path / "walmart" / "ads" / "sponsored-products.openapi.json"
     target.parent.mkdir(parents=True)
     target.write_text("{not json")
     with pytest.raises(SpecError) as excinfo:
         specs.load_spec("walmart:ads:sponsored-products")
     assert "not valid JSON" in str(excinfo.value)
+    assert str(target) in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [pytest.param("{not json", id="truncated"), pytest.param('["a"]', id="not an object")],
+)
+def test_an_unusable_cached_spec_falls_back_to_the_bundle(
+    body: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(specs, "cache_dir", lambda: tmp_path)
+    target = tmp_path / "walmart" / "ads" / "sponsored-products.openapi.json"
+    target.parent.mkdir(parents=True)
+    target.write_text(body)
+
+    spec = specs.load_spec("walmart:ads:sponsored-products")
+
+    assert spec["info"]["title"]
+    assert not target.exists(), "the unusable cached copy is discarded, not left to fail again"
+    assert specs.spec_path("walmart:ads:sponsored-products") == specs.bundled_path(
+        specs.meta_for("walmart:ads:sponsored-products")
+    )
 
 
 def test_cache_takes_precedence_over_the_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
