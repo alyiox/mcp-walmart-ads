@@ -8,6 +8,7 @@
 <!-- mcp-name: io.github.alyiox/mcp-walmart-ads -->
 
 MCP server for three Walmart Inc. API families, behind one tool surface:
+MCP server for three Walmart Inc. API families, behind one tool surface:
 
 | Platform | APIs | Auth |
 |---|---|---|
@@ -15,7 +16,10 @@ MCP server for three Walmart Inc. API families, behind one tool surface:
 | `walmart:marketplace` — [Walmart Marketplace](https://developer.walmart.com/home/us-mp) | 28 domains (orders, items, feeds, reports, …) | OAuth2 `client_credentials` |
 | `samsclub:ads` — [Sam's Club](https://developer.samsclub.com) | Sponsored Products | RSA-SHA256 signature + bearer token |
 
-Five tools over 31 apis and 424 operations:
+Four tools reach 31 apis and 424 operations: discovery (`list_endpoints`,
+`describe_endpoint`), a generic proxy (`call_endpoint`), and a downloader
+(`download_file`). An agent finds endpoints in the bundled OpenAPI specs and calls them;
+the server signs, acquires tokens, and builds headers.
 
 ```
 walmart:ads:sponsored-products:SBAProfileUpdateV2
@@ -23,43 +27,20 @@ walmart:ads:sponsored-products:SBAProfileUpdateV2
    └────────── platform ─────────┘  credentials attach here
 ```
 
-Spec-driven discovery (`list_endpoints`,
-`describe_endpoint`), a generic API proxy (`call_endpoint`), and a downloader
-(`download_file`). The agent discovers
-endpoints from bundled OpenAPI specs and calls them; the server handles signing, token
-acquisition, and header construction.
-
-## Features
-
-- **Hierarchical api ids** — `<retailer>:<line>:<name>`, e.g.
-  `walmart:ads:sponsored-products`, `walmart:marketplace:order-management`,
-  `samsclub:ads:sponsored-products`. An operation id appends `:operationId`. Credentials
-  attach at the two-segment prefix, so an operation id alone resolves to a host and an
-  auth model without the caller naming either
-- **One naming convention, two retailers** — apis whose `<line>:<name>` suffix matches
-  cover the same surface for different retailers (`walmart:ads:sponsored-products` and
-  `samsclub:ads:sponsored-products`), so an agent can move what it knows across; the
-  overlap is partial, 13 shared operation ids of 90
-- **Spec-driven discovery** — list/describe endpoints from 33 bundled OpenAPI specs,
-  refreshed in the background on a schedule; `describe_endpoint` returns an operation plus its full
-  `components.schemas` closure and strips the headers the server owns
-- **Any endpoint** — call by operation id or raw method+path; raw paths reach
-  alpha/beta/unpublished endpoints absent from the specs
-- **Both auth models** — per-request RSA-SHA256 signing for the ads platforms; OAuth2
-  token acquisition with per-credential caching, single-flight refresh, and one retry
-  after a 401 for Marketplace
-- **Per-platform config isolation** — a malformed block for one platform does not stop
-  the others loading, and discovery works with no credentials at all
-- **Credential-safe cURL** — every cached cURL replaces bearer tokens, access tokens,
-  and signatures with placeholders
-- Large responses truncated, with the full body available at an MCP resource URI
+Ids carry the routing. Credentials attach at the two-segment platform prefix, so an
+operation id alone resolves to a host and an auth model without the caller naming either.
+Apis whose `<line>:<name>` suffix matches cover the same surface for different retailers
+— `walmart:ads:sponsored-products` and `samsclub:ads:sponsored-products` — so an agent
+moves what it knows across, though the overlap is partial: 13 shared operation ids of 90.
 
 ## Requirements
 
 - Python 3.13+
-- Credentials for whichever platforms you use:
+- Credentials for whichever platforms you use. Configure only those — an absent platform
+  is simply unconfigured, and discovery works with no credentials at all.
   - **Walmart Connect / Sam's Club** — consumer ID, RSA key pair, bearer token
-  - **Walmart Marketplace** — client ID + secret, and the advertiser (seller profile) ids they serve
+  - **Walmart Marketplace** — client ID + secret, and the advertiser (seller profile) ids
+    they serve
 
 ## Quick start
 
@@ -80,12 +61,13 @@ npx -y @modelcontextprotocol/inspector@latest uv run mcp-walmart-ads
 
 ## Configuration
 
-The config file lives under your home directory at `~/.config/mcp-walmart-ads/config.json`.
+`config.json` MUST live at `~/.config/mcp-walmart-ads/config.json`. The server reads it
+once at startup, so a corrected file REQUIRES a restart.
 
-> **Windows note:** `~` maps to `%USERPROFILE%` (typically `C:\Users\<you>`), so the
-> full path is `%USERPROFILE%\.config\mcp-walmart-ads\config.json`.
+> **Windows:** `~` maps to `%USERPROFILE%` (typically `C:\Users\<you>`), making the full
+> path `%USERPROFILE%\.config\mcp-walmart-ads\config.json`.
 
-**1. Create the config directory and copy the example**
+Create the directory and copy the example:
 
 ```bash
 # Unix-like (macOS, Linux, WSL, …)
@@ -98,9 +80,6 @@ cp config.example.json ~/.config/mcp-walmart-ads/config.json
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.config\mcp-walmart-ads\keys\walmart-ads"
 Copy-Item config.example.json "$env:USERPROFILE\.config\mcp-walmart-ads\config.json"
 ```
-
-**2. Fill in your credentials.** Configure only the platforms you use — an absent
-platform is simply unconfigured, and the discovery tools keep working regardless.
 
 ### Shape
 
@@ -142,13 +121,13 @@ platform, so no discriminator field is needed.
 | Field | Notes |
 |---|---|
 | `consumer_id` | Partner Network consumer ID |
-| `private_key` | Path to the RSA private key (PEM); relative paths resolve against the config directory |
+| `private_key` | Path to the RSA private key (PEM). Relative paths resolve against the config directory |
 | `private_key_version` | Key version string (default `"1"`) |
 | `bearer_token` | OAuth bearer token |
-| `base_urls.<api>` | One per api in the platform's discovery surface. Keys may be bare (`sponsored-products`) or fully qualified (`walmart:ads:sponsored-products`). Extra keys are allowed for the auxiliary specs reached by raw method+path |
+| `base_urls.<api>` | One per api in the platform's discovery surface. Keys MAY be bare (`sponsored-products`) or fully qualified (`walmart:ads:sponsored-products`); extra keys are allowed for the auxiliary specs reached by raw method+path |
 
-Environment names are free-form for these platforms — Walmart may issue a tenant only
-`production`, or `production` + `staging`.
+Environment names are free-form here — Walmart may issue a tenant only `production`, or
+`production` and `staging`.
 
 **OAuth2 platform** (`walmart:marketplace`):
 
@@ -177,23 +156,23 @@ Environment names are free-form for these platforms — Walmart may issue a tena
 }
 ```
 
-Advertiser ids nest under the credential that serves them, so a secret appears exactly
-once and a dangling advertiser reference is structurally impossible. `partner_id` is
-per-seller because two `payments` operations require it as `WM_PARTNER_ID`; an all-zero
-value is read as absent, since that is what a generated config writes for a seller
-without one. `scripts/backfill_partner_ids.py` fills the absent ones from Walmart. Base URLs are
-fixed by the server and absent from the file; `environment` must be `production` or
-`sandbox`.
+`environment` MUST be `production` or `sandbox`; base URLs are fixed by the server and
+absent from the file. Advertiser ids nest under the credential that serves them, so a
+secret appears exactly once and a dangling advertiser reference is structurally
+impossible. `partner_id` is per-seller because two `payments` operations require it as
+`WM_PARTNER_ID`; an all-zero value reads as absent, since that is what a generated config
+writes for a seller without one, and `scripts/backfill_partner_ids.py` fills the gaps from
+Walmart.
 
-Regions are a namespace, not a route — for `walmart:marketplace` every region reaches the
-same hosts. The level exists because advertiser ids are only unique within a region.
+Regions are a namespace, not a route — every `walmart:marketplace` region reaches the same
+hosts. The level exists because advertiser ids are unique only within a region.
 
 ### Splitting the config
 
-A populated `walmart:marketplace` block can be tens of kilobytes of credentials —
-88% of the file here — and a stray comma while editing it takes down every platform,
-because a parse failure happens before any per-platform validation. So platforms may
-live in drop-in files under `config.d/`, merged over the base:
+A populated `walmart:marketplace` block runs to tens of kilobytes of credentials, 88% of
+the file here, and a stray comma while editing it takes down every platform: a parse
+failure precedes per-platform validation. Platforms MAY therefore live in drop-in files
+under `config.d/`, merged over the base:
 
 ```
 ~/.config/mcp-walmart-ads/
@@ -204,7 +183,7 @@ live in drop-in files under `config.d/`, merged over the base:
 └── keys/
 ```
 
-- A drop-in may declare **only** `platforms`; server-wide settings stay in `config.json`.
+- A drop-in MUST declare only `platforms`; server-wide settings stay in `config.json`.
 - A platform declared in two files is an **error naming both** — never silent precedence.
 - Only `*.json` directly in `config.d/` is read, so `.bak` and editor swap files are ignored.
 - A file that fails to parse costs **only its own platforms**; the rest keep working.
@@ -212,12 +191,10 @@ live in drop-in files under `config.d/`, merged over the base:
   moving a platform into `config.d/` needs no path edits.
 - No `config.d/` directory means no change in behavior.
 
-Read `wmt://platforms` to see which platforms loaded and what regions and environments
-they declare. A platform that failed to load has no regions; reading one of its
-environments returns the loader's own message — which file, which fields, and that a
-fix needs a restart.
-
-> **The config is read once at startup.** A corrected file needs the server restarted.
+A malformed block for one platform MUST NOT stop the others loading. Read
+`wmt://platforms` to see which loaded and what regions and environments they declare: one
+that failed has no regions, and reading one of its environments returns the loader's own
+message — which file, which fields, and that a fix needs a restart.
 
 ### Top-level options
 
@@ -225,12 +202,12 @@ fix needs a restart.
 |---|---|---|
 | `response_cache_ttl` | `3600` | Seconds a truncated body or download stays readable at its resource URI |
 | `truncate_threshold` | `2048` | Response bytes returned inline before truncating to a preview |
-| `spec_refresh` | `{"auto": true, "interval": 7}` | Background spec refresh: `auto` turns the sweep on or off, `interval` is days between sweeps (fractional allowed) |
+| `spec_refresh` | `{"auto": true, "interval": 7}` | Background spec refresh. `auto` turns the sweep on or off; `interval` is days between sweeps, and MAY be fractional |
 
 ### Market → tenant (`wap-tenant-id`)
 
-Pass `tenant` on `call_endpoint` / `download_file` for non-US `walmart:ads` markets
-(e.g. `WMT_CA`, `WMT_MX`, `WBD_OD`). Omit for US and for `walmart:marketplace`.
+Pass `tenant` on `call_endpoint` and `download_file` for non-US `walmart:ads` markets
+(`WMT_CA`, `WMT_MX`, `WBD_OD`, …). Omit it for US and for `walmart:marketplace`.
 
 ## Tools
 
@@ -246,81 +223,80 @@ List operations across every api, with optional filters.
 | `tag` | Filter by OpenAPI tag |
 | `method` | Filter by HTTP verb — `GET`, `POST`, `PUT`, `PATCH`, `DELETE` (schema enum) |
 
-Returned operation ids are qualified (`api:operationId`) and can be passed straight to
+Returned operation ids are qualified (`api:operationId`) and pass straight to
 `describe_endpoint` or `call_endpoint`.
 
 ### `describe_endpoint`
 
-One operation plus every `components.schemas` entry reachable from it, so request bodies
+One operation plus every `components.schemas` entry reachable from it, so a request body
 can be built without the full spec. Server-managed auth and QoS headers are omitted.
 
 | Parameter | Notes |
 |---|---|
-| `operation_id` | Qualified (`api:operationId`) or bare when unambiguous |
+| `operation_id` | Qualified (`api:operationId`), or bare when unambiguous |
 | `api` | Api to resolve a bare id in, e.g. `walmart:ads:sponsored-products` |
 
 ### `call_endpoint`
 
-Execute an authenticated request against any configured platform.
+Execute an authenticated request against any configured platform. Signing, token
+acquisition with per-credential caching and single-flight refresh, and one retry after a
+401 all happen server-side.
 
 | Parameter | Notes |
 |---|---|
 | `region`, `environment` | Required. Src: config |
 | `operation_id` | Qualified or bare. Resolves api, platform, method, path, and required headers |
 | `api` | Required with raw `method` + `path`; otherwise inferred from `operation_id`. Accepts the two auxiliary `walmart:ads` specs |
-| `method`, `path` | Raw route, reaching endpoints absent from the specs |
+| `method`, `path` | Raw route, reaching alpha/beta/unpublished endpoints absent from the specs |
 | `path_params` | Values for `{placeholders}` in the path |
 | `params`, `body` | Query string and JSON body |
 | `file_path` | Send the file as `multipart/form-data` — Marketplace feed uploads. Pair with the `feedType` query parameter |
-| `advertiser_id` | **Required on `walmart:marketplace`**, where it selects the credential. Optional on the ads platforms, where it is sent as `X-Advertiser-ID` |
+| `advertiser_id` | **MUST be given on `walmart:marketplace`**, where it selects the credential. Optional on the ads platforms, where it is sent as `X-Advertiser-ID` |
 | `tenant` | WAP tenant for non-US `walmart:ads` regions |
+
+A response larger than `truncate_threshold` is previewed inline, with the full body at
+`wmt://responses/{request_id}` and a reproducible cURL at `wmt://curl/{request_id}` —
+bearer tokens, access tokens, and signatures replaced with placeholders.
 
 ### `download_file`
 
 Download a report, label, or snapshot from an authenticated endpoint. Give a full `url`
-(e.g. the `details` URL from a display snapshot poll), or `operation_id`, or `api` with
-`method` + `path`.
+(the `details` URL from a display snapshot poll, say), or `operation_id`, or `api` with
+`method` + `path`. `platform` is required only for a bare `url`.
 
 With `dest_path` the bytes are written there. Without it they are gunzipped when gzipped
-and cached, and the result carries `cached_at` — a binary payload with no `dest_path`
-asks for one instead. Redirects are followed, keeping auth headers on a relative or
-same-host `Location` and dropping credentials cross-host; the result includes `urls`, the
-hop path. `platform` is required only when downloading from a bare `url`.
+and cached, and the result carries `cached_at` — a binary payload with no `dest_path` asks
+for one instead. Redirects are followed, keeping auth headers on a relative or same-host
+`Location` and dropping credentials cross-host; the result includes `urls`, the hop path.
 
 ## Keeping specs current
 
-Specs refresh in the background: once when the server starts, then every
-`spec_refresh.interval` days (7 by default). Refreshed documents land in a user cache that
-takes precedence over the bundled copies.
+Specs refresh in the background: once at startup, then every `spec_refresh.interval` days
+(7 by default). Refreshed documents land in a user cache that outranks the bundled copies.
+Set `auto` to `false` to stop the sweep — the interval is remembered for whenever you turn
+it back on, and the manual refresh below keeps working.
 
-```json
-{ "spec_refresh": { "auto": true, "interval": 7 } }
+To refresh now, having hit an endpoint the bundled spec does not have:
+
+```bash
+uv run mcp-walmart-ads --refresh
 ```
 
-Set `auto` to `false` to stop the background sweep; `--refresh` below keeps working, and
-the interval is remembered for whenever you turn it back on.
+That sweeps every spec regardless of the interval, printing one row per document:
+`written`, `unchanged`, or `error`.
 
 There is deliberately no tool for this. A stale spec is indistinguishable from a current
 one from inside a session — it simply lacks an endpoint — so an agent asked to decide
 would either never refresh or refresh superstitiously after an unrelated failure. The
 trigger belongs outside the session.
 
-To refresh right now, when you have hit an endpoint the bundled spec does not have:
-
-```bash
-uv run mcp-walmart-ads --refresh
-```
-
-That sweeps every spec regardless of the interval and prints one row per document.
-
-A document is written only once it yields an operation, so an upstream answering `200`
-with an error body cannot poison the cache, and a byte-identical document is left alone —
-each row reports `written`, `unchanged`, or `error`. A cached file that will not load
-falls back to the bundled copy and is discarded.
-
-Servers coordinate through `spec-state.json` at the cache root, which records when each
-spec was last tried and holds a lease so that one process sweeps at a time — every client
-session runs its own server process, and without it each would re-download all 33.
+A document MUST yield at least one operation before it is installed, so an upstream
+answering `200` with an error body cannot poison the cache, and a byte-identical document
+is left alone. A cached file that will not load is discarded and the read falls back to
+the bundled copy, which is never written at runtime and is therefore the floor. Servers
+coordinate through `spec-state.json` at the cache root, which records when each spec was
+last tried and holds a lease so one process sweeps at a time — every client session runs
+its own server process, and without it each would re-download all 33.
 
 ## MCP resources
 
@@ -410,13 +386,13 @@ Walmart publishes no OpenAPI files, but each ReadMe reference page hydrates its 
 the registry UUIDs of its documents, and `https://dash.readme.com/api/v1/api-registry/<uuid>`
 serves the full spec unauthenticated. That covers Walmart Connect and all 28 Marketplace
 domains. Sam's Club publishes neither, so its spec is hand-authored from the developer
-docs; `scripts/build_samsclub_spec.py` regenerates a *candidate* from those docs and the
+docs: `scripts/build_samsclub_spec.py` regenerates a *candidate* from those docs, and the
 scheduled `spec drift` workflow opens a PR when they change, as a human review gate. The
 candidate is never shipped and never loaded at runtime.
 
 Specs are stored verbatim as upstream served them, so a refresh diff shows exactly what
-changed; oversized inline examples and `x-readme` metadata are stripped on load rather
-than on disk.
+changed. Oversized inline examples and `x-readme` metadata are stripped on load rather
+than on disk, which keeps that reduction retunable without re-downloading anything.
 
 ```bash
 # Rebuild the bundled specs (registry-sourced only, by default)
@@ -439,8 +415,8 @@ uv run pytest tests/ -v
 
 ## Contributing
 
-Issues and pull requests are welcome. Please keep changes focused and make sure
-`ruff check`, `ruff format --check`, `pyright`, and `pytest` all pass.
+Issues and pull requests are welcome. Keep changes focused; `ruff check`,
+`ruff format --check`, `pyright`, and `pytest` MUST all pass.
 
 ## License
 
