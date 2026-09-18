@@ -53,7 +53,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -64,6 +64,10 @@ from .platforms import platform_for, platform_of
 
 BUNDLE_DIR = Path(__file__).parent / "specs"
 REGISTRY_URL = "https://dash.readme.com/api/v1/api-registry/{uuid}"
+
+# The OpenAPI path-item keys that denote an operation; everything else under a
+# path ("parameters", "summary", vendor extensions) is not one.
+HTTP_METHODS = frozenset({"get", "put", "post", "delete", "options", "head", "patch", "trace"})
 
 # Raw URL of the committed Sam's Club spec. Refreshing requires this to resolve
 # at runtime; if the repo is private, point it at a public raw-content host or an
@@ -217,6 +221,27 @@ _DROPPED_KEYWORDS = frozenset({"x-readme"})
 # of payloads while dropping the multi-megabyte taxonomy blobs that would
 # otherwise land in an agent's context verbatim.
 MAX_EXAMPLE_BYTES = 1024
+
+
+def iter_operations(spec: Any) -> Iterator[tuple[str, str, dict[str, Any]]]:
+    """Yield ``(path, method, operation)`` for every HTTP operation in a document.
+
+    One definition of what counts as an operation, applied both on the way in --
+    :func:`refresh` rejects a fetched document that yields none -- and on the way
+    out, where :mod:`.discovery` builds its index from it. Tolerant of any shape,
+    because the way in is an untrusted HTTP response, not yet known to be a spec.
+    """
+    if not isinstance(spec, Mapping):
+        return
+    paths = spec.get("paths")
+    if not isinstance(paths, Mapping):
+        return
+    for path, methods in paths.items():
+        if not isinstance(methods, Mapping):
+            continue
+        for method, operation in methods.items():
+            if method.lower() in HTTP_METHODS and isinstance(operation, dict):
+                yield str(path), method.lower(), operation
 
 
 def _example_is_small(value: Any) -> bool:

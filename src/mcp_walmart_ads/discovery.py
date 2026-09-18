@@ -31,9 +31,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from .platforms import platform_for, platform_of
-from .specs import API_IDS, SpecError, load_spec, meta_for, spec_path
+from .specs import API_IDS, SpecError, iter_operations, load_spec, meta_for, spec_path
 
-HTTP_METHODS = frozenset({"get", "put", "post", "delete", "options", "head", "patch", "trace"})
 SCHEMA_REF_PREFIX = "#/components/schemas/"
 _REF_RE = re.compile(r'"\$ref"\s*:\s*"([^"]+)"')
 
@@ -142,28 +141,21 @@ def _load_cached(api: str) -> tuple[dict[str, Any], dict[str, Operation]]:
 
     spec = load_spec(api)
     ops: dict[str, Operation] = {}
-    for path_str, methods in (spec.get("paths") or {}).items():
-        if not isinstance(methods, dict):
-            continue
-        for method, raw in methods.items():
-            if method.lower() not in HTTP_METHODS or not isinstance(raw, dict):
-                continue
-            declared = raw.get("operationId")
-            op_id = (
-                declared
-                if isinstance(declared, str) and declared
-                else f"{method.upper()} {path_str}"
-            )
-            tags = raw.get("tags")
-            ops[op_id] = Operation(
-                operation_id=op_id,
-                api=api,
-                method=method.lower(),
-                path=path_str,
-                summary=str(raw.get("summary") or ""),
-                tags=tuple(tags) if isinstance(tags, list) else (),
-                raw=raw,
-            )
+    for path_str, method, raw in iter_operations(spec):
+        declared = raw.get("operationId")
+        op_id = (
+            declared if isinstance(declared, str) and declared else f"{method.upper()} {path_str}"
+        )
+        tags = raw.get("tags")
+        ops[op_id] = Operation(
+            operation_id=op_id,
+            api=api,
+            method=method,
+            path=path_str,
+            summary=str(raw.get("summary") or ""),
+            tags=tuple(tags) if isinstance(tags, list) else (),
+            raw=raw,
+        )
 
     _cache[api] = (mtime, spec, ops)
     return spec, ops
