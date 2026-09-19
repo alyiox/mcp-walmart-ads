@@ -3,6 +3,26 @@ name = "mcp-walmart-ads"
 version = "0.5.0"
 description = "MCP server for Walmart Connect Ads, Sam's Club Sponsored Ads, and Walmart Marketplace APIs"
 readme = "README.md"
+keywords = [
+    "walmart",
+    "walmart-connect",
+    "ads",
+    "marketplace",
+    "sams-club",
+    "mcp",
+    "api",
+]
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 requires-python = ">=3.13"
 dependencies = [
     "mcp[cli]>=2.2.0",
