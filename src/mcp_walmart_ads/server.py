@@ -974,6 +974,9 @@ def _refresh_now() -> int:
 
 
 def main() -> None:
+    if "--version" in sys.argv[1:] or "-V" in sys.argv[1:]:
+        print(f"mcp-walmart-ads {version('mcp-walmart-ads')}")
+        return
     if "--refresh" in sys.argv[1:]:
         raise SystemExit(_refresh_now())
     mcp.run(transport="stdio")
