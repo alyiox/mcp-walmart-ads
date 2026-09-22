@@ -23,6 +23,7 @@ import sys
 from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -85,7 +86,9 @@ async def _lifespan(_: MCPServer) -> AsyncIterator[None]:
 
 
 mcp = MCPServer(
-    "Walmart APIs",
+    "mcp-walmart-ads",
+    title="Walmart & Sam's Club APIs",
+    version=version("mcp-walmart-ads"),
     lifespan=_lifespan,
     instructions=(
         "MCP server for Walmart Connect Ads, Sam's Club Sponsored Ads, and Walmart "
