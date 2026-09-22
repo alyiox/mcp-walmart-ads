@@ -54,9 +54,9 @@ def sync_server_json(version: str, *, write: bool) -> list[str]:
     """Point every version field in ``server.json`` at ``version``.
 
     Returns one line per field that was stale, empty when nothing moved. The
-    file is re-serialized rather than patched in place, which is what the
-    publish workflow already does to it with jq at tag time, so both agree on
-    the formatting.
+    file is re-serialized rather than patched in place. CI verifies these
+    fields rather than rewriting them at tag time, so what is committed is
+    what gets published.
     """
     data = json.loads(SERVER_JSON.read_text(encoding="utf-8"))
 

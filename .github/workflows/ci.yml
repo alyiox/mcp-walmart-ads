@@ -28,6 +28,20 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Version consistency
+        run: |
+          pkg=$(uv version --short)
+          bad=$(jq -r --arg v "$pkg" \
+            '[.version, .packages[].version] | map(select(. != $v)) | join(", ")' server.json)
+          [ -z "$bad" ] || {
+            echo "::error file=server.json::version $bad does not match package $pkg"
+            exit 1
+          }
+          if [ "${{ github.ref_type }}" = "tag" ] && [ "${{ github.ref_name }}" != "$pkg" ]; then
+            echo "::error::tag ${{ github.ref_name }} does not match package version $pkg"
+            exit 1
+          fi
+
       - name: Install dependencies
         run: uv sync --group dev
 
@@ -71,11 +85,6 @@ jobs:
       - name: Install MCP Registry publisher
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
-
-      - name: Update MCP Registry manifest version
-        run: |
-          jq --arg version "${GITHUB_REF_NAME}" '.version = $version | .packages[].version = $version' server.json > server.tmp
-          mv server.tmp server.json
 
       - name: Authenticate MCP Registry publisher
         run: ./mcp-publisher login github-oidc
