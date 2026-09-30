@@ -973,7 +973,23 @@ def _refresh_now() -> int:
     return 1 if any(row["status"] == "error" for row in rows) else 0
 
 
+_USAGE = """\
+usage: mcp-walmart-ads [OPTION]
+
+Serve the Walmart Connect, Sam's Club, and Walmart Marketplace APIs over MCP on
+stdio. With no option, run the server.
+
+options:
+  -h, --help     show this help and exit
+  -V, --version  print the version and exit
+  --refresh      refresh every cached spec now, ignoring the interval, and exit
+"""
+
+
 def main() -> None:
+    if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
+        print(_USAGE, end="")
+        return
     if "--version" in sys.argv[1:] or "-V" in sys.argv[1:]:
         print(f"mcp-walmart-ads {version('mcp-walmart-ads')}")
         return
